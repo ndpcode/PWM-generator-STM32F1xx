@@ -1,36 +1,76 @@
 
-#include "stm32f10x.h"
 #include "settings.h"
+#include "gen_flash.h"
 
-void FlashWriteData(uint8_t *pwm_range_index, uint8_t *signal_range_index)
+uint8_t FlashAccessEnable(void)
 {
+	//вкл. доступ к flash
 	FLASH->KEYR = 0x45670123;
 	FLASH->KEYR = 0xCDEF89AB;
-	FLASH->CR |= FLASH_CR_PER;
-	FLASH->AR = flash_base_addr;
-	FLASH->CR |= FLASH_CR_STRT;
-	while( FLASH->SR & FLASH_SR_BSY );
-	FLASH->CR &= ~FLASH_CR_PER;
-	FLASH->CR |= FLASH_CR_PG;
-	while( FLASH->SR & FLASH_SR_BSY );
-	flash_addr1 = *pwm_range_index;
-	while( FLASH->SR & FLASH_SR_BSY );
-	flash_addr2 = *signal_range_index;
-	while( FLASH->SR & FLASH_SR_BSY );
-	FLASH->CR &= ~(FLASH_CR_PG);
-	FLASH->CR |= FLASH_CR_LOCK;
+	return 1;
 }
 
-void FlashReadData(uint8_t *pwm_range_index, uint8_t *signal_range_index)
+uint8_t FlashWriteData(uint8_t *byte_array, uint8_t size)
 {
-	if ( ( flash_addr1 > 0 ) && ( flash_addr1 < 0xFF ) && ( flash_addr2 > 0 ) && ( flash_addr2 < 0xFF ) )
+	uint8_t i = 0;
+	
+	// size - не 0, кратный 2
+	if ( size == 0 ) return 0;
+	if ( ( size % 2 ) != 0 ) return 0;
+	//не пустой указатель
+	if ( byte_array == 0 ) return 0;
+	
+	//ждем
+	while( FLASH->SR & FLASH_SR_BSY );
+	//если установлен флаг завершения операции, сброс
+	if (FLASH->SR & FLASH_SR_EOP) FLASH->SR |= FLASH_SR_EOP;
+	
+	//очистка страницы с адресом flash_base_add
+	//режим - очистка страницы
+	FLASH->CR |= FLASH_CR_PER;
+	//адрес старницы
+	FLASH->AR = flash_base_addr;
+	//старт очистки
+	FLASH->CR |= FLASH_CR_STRT;
+	//ждем флага и сбрасываем
+	while ( !( FLASH->SR & FLASH_SR_EOP ) );
+	FLASH->SR |= FLASH_SR_EOP;
+	//выкл режим
+	FLASH->CR &= ~FLASH_CR_PER;
+	
+	//режим - запись во flash	
+	FLASH->CR |= FLASH_CR_PG;
+	//ждем флага и сбрасываем
+	while ( !( FLASH->SR & FLASH_SR_EOP ) );
+	FLASH->SR |= FLASH_SR_EOP;
+	
+	//запись
+	for ( i = 0; i < size; i += 2 )
 	{
-		*pwm_range_index = flash_addr1;
-		*signal_range_index = flash_addr2;		
-	} else
-	{
-		*pwm_range_index = 6;
-		*signal_range_index = 1;
+		//пишем в память
+		*(volatile uint16_t*)(flash_base_addr + i) = (uint16_t)( byte_array[i] + ( byte_array[i+1] << 8 ) );
+		//ждем флага и сбрасываем
+		while ( !( FLASH->SR & FLASH_SR_EOP ) );
+		FLASH->SR |= FLASH_SR_EOP;
 	};
 	
+	//выкл режим
+	FLASH->CR &= ~(FLASH_CR_PG);
+	
+	return 1;
+}
+
+uint8_t FlashReadData(uint8_t *byte_array, uint8_t size)
+{
+	uint8_t i = 0;
+	// size - не 0, кратный 2
+	if ( size == 0 ) return 0;
+	if ( ( size % 2 ) != 0 ) return 0;
+	//чтение flash в массив
+	for ( i = 0; i < size; i += 2 )
+	{
+		byte_array[i] = ( *(volatile uint16_t*)(flash_base_addr+i) ) & 0x00FF;
+		byte_array[i+1] = ( ( *(volatile uint16_t*)(flash_base_addr+i) ) & 0xFF00 ) >> 8;		
+	};
+	return 1;	
 }

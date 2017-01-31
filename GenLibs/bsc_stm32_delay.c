@@ -1,7 +1,10 @@
+
 #include "stm32f10x.h"
 #include "bsc_stm32_delay.h"
 
+#ifndef cpuFreq
 #define cpuFreq 72000000 //קאסעמעא ßִ׀ְ ּÊ
+#endif
 
 // DWT (Data Watchpoint Trigger)
 #define DWT_CYCCNT *(volatile uint32_t *)0xE0001004

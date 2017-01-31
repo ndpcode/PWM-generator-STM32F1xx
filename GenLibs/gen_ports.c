@@ -1,4 +1,5 @@
-#include "stm32f10x.h"
+
+#include "settings.h"
 #include "gen_ports.h"
 
 #define MODE_INPUT_ANALOG(_pin_number, _lh) 0
@@ -13,7 +14,7 @@
 #define MODE_OUTPUT_ALT_OD(_pin_number, _lh, _speed_mhz) ( GPIO_CR##_lh##_CNF##_pin_number | MODE_##_speed_mhz##MHZ(_pin_number, _lh) )
 
 
-void gen_init_ports(void)
+uint8_t GenInitPorts(void)
 {
 	//PORT A, B, C power on
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN; // port A,B,C power on
@@ -52,4 +53,6 @@ void gen_init_ports(void)
 	//set PORTC
 	GPIOC->CRL = 0;
 	GPIOC->CRH = MODE_OUTPUT_PP(13, H, 2);      //PC 13 - LED 3 
+	
+	return 1;
 }
