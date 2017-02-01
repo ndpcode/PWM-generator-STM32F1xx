@@ -14,6 +14,9 @@
 #define transistorsMinTime  0.000000050 //минимальное время открытого транзистора, с
 #define transistorsDeadTime 0.000000050 //deadTime для транзисторов, с
 
+#define MIN_POWER_K 0.0   //минимальное значение коэффициента мощности, %
+#define MAX_POWER_K 150.0 //максимальное значение коэффициента мощности, %
+
 #define CH2_UP GPIOA->BSRR = GPIO_BSRR_BS9
 #define CH2_DOWN GPIOA->BSRR = GPIO_BSRR_BR9
 #define CH4_UP GPIOB->BSRR = GPIO_BSRR_BS1
