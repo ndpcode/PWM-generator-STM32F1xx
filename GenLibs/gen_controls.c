@@ -1,5 +1,5 @@
 
-#include "stm32f10x.h"
+#include "settings.h"
 #include "gen_controls.h"
 #include <stdlib.h>
 #include <string.h>
@@ -11,52 +11,115 @@ typedef struct
 	void ( *_button_click_func )(void);
 	void ( *_button_double_click_func )(void);
 	void ( *_button_hold_func )(void);
-	unsigned button_pressed_flag : 1;
 	unsigned button_busy_flag : 1;
-	unsigned button_double_click_flag : 1;
-	unsigned button_hold_flag : 1;
-} ButtonsBase;
+	uint32_t event_code;
+	void *next_button;
+} ControlsBaseStruct;
 
-ButtonsBase *ButtonsData;
-uint8_t ButtonsLength = 0;
+ControlsBaseStruct *ButtonsData;
+ControlsBaseStruct *ValcoderData;
 
-void ButtonsDataClear(void)
+ControlsBaseStruct* getLastItem(ControlsBaseStruct *_data)
 {
-	free(ButtonsData);
-	ButtonsLength = 0;
+	ControlsBaseStruct *last_element = _data;
+	if ( !_data ) return 0;
+	if ( !_data->next_button ) return _data;
+	while ( last_element->next_button )
+	{
+		last_element = (ControlsBaseStruct*)last_element->next_button;
+	};
+	return last_element;
+}
+
+uint8_t ControlsDataClear(void)
+{
+	ControlsBaseStruct **last_element;
+	if ( ButtonsData )
+	{
+		*last_element = getLastItem(ButtonsData);
+		while ( *last_element )
+		{
+			free(*last_element);
+			*last_element = getLastItem(ButtonsData);
+		};
+	};
+	if ( ValcoderData )
+	{
+		*last_element = getLastItem(ValcoderData);
+		while ( *last_element )
+		{
+			free(*last_element);
+			*last_element = getLastItem(ValcoderData);
+		};
+	};		
+	return 1;
 };
 
-void ButtonsAddNewButton(char _portLetter, uint8_t _pinNumber, void (*_click_func)(void))
+uint8_t ControlsRegNewButton(char _portLetter, uint8_t _pinNumber, void (*_click_func)(void), uint32_t _event_code)
 {
-	//выделяем память
-	ButtonsLength++;
-	ButtonsData = (ButtonsBase*)realloc(ButtonsData, ButtonsLength * sizeof(ButtonsBase) );
-	memset( &ButtonsData[ButtonsLength-1], 0, sizeof(ButtonsBase) );
+	ControlsBaseStruct *new_button = 0;
+	ControlsBaseStruct *last_button = getLastItem(ButtonsData);
+	//проверка буквы порта
+	if ( !strchr("ABCDEF", _portLetter) ) return 0;
+	//проверка номера пина
+	if ( _pinNumber > 15 ) return 0;
+	
+	//создаем новый элемент
+	new_button = (ControlsBaseStruct*)malloc( sizeof(ControlsBaseStruct) );
+	//проверка и выход если память не выделена
+	if ( !new_button  ) return 0;
+	if ( !ButtonsData )
+	{
+		ButtonsData = new_button; 
+	} else if ( last_button )
+	{
+		last_button->next_button = new_button;
+	};
+	//проверка
+	if ( ( !ButtonsData ) && ( !last_button ) )
+	{
+		//удаляем, что-то пошло не так...
+		free(new_button);
+		return 0;
+	};
 	//заполняем данные элемента
 	switch ( _portLetter )
 	{
 		case 'A':
-			ButtonsData[ButtonsLength-1].port_idr_addr = &GPIOA->IDR;			
+			new_button->port_idr_addr = &GPIOA->IDR;			
 		break;
 		case 'B':
-			ButtonsData[ButtonsLength-1].port_idr_addr = &GPIOB->IDR;			
+			new_button->port_idr_addr = &GPIOB->IDR;			
 		break;
 		case 'C':
-			ButtonsData[ButtonsLength-1].port_idr_addr = &GPIOC->IDR;			
+			new_button->port_idr_addr = &GPIOC->IDR;			
 		break;
 		case 'D':
-			ButtonsData[ButtonsLength-1].port_idr_addr = &GPIOD->IDR;			
+			new_button->port_idr_addr = &GPIOD->IDR;			
 		break;
 	  case 'E':
-			ButtonsData[ButtonsLength-1].port_idr_addr = &GPIOE->IDR;			
+			new_button->port_idr_addr = &GPIOE->IDR;			
 		break;
 		case 'F':
-			ButtonsData[ButtonsLength-1].port_idr_addr = &GPIOF->IDR;			
+			new_button->port_idr_addr = &GPIOF->IDR;			
 		break;
 	};
-	ButtonsData[ButtonsLength-1].pin_addr = 1 << _pinNumber;
-	ButtonsData[ButtonsLength-1]._button_click_func = _click_func;  	
+	new_button->pin_addr = 1 << _pinNumber;
+	new_button->_button_click_func = _click_func;
+  new_button->event_code = _event_code;
+  return 1;	
 };
+
+uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
+	                             char _portLetterCW, uint8_t _pinNumberCW,
+															 void (*_ccw_func)(void), uint32_t _event_ccw_code,
+															 void (*_cw_func)(void), uint32_t _event_cw_code)
+{
+};
+
+uint32_t ControlsUpdateEvents(UpdateEventsParams _params)
+{
+}
 
 void ButtonsCheck(void)
 {
