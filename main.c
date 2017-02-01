@@ -19,7 +19,7 @@ int main(void)
 	//старт МК, настройка тактовых генераторов и часов
 	GenSystemSet();
 	//настройка портов
-	gen_init_ports();
+	GenInitPorts();
 	//разрешаем доступ к flash MCU
 	FlashAccessEnable();
 	//чтение настроек из flash

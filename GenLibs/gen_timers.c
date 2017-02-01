@@ -1,9 +1,8 @@
 
-#include "stm32f10x.h"
+#include "settings.h"
 #include "gen_timers.h"
 #include <math.h>
 #include <string.h>
-#include "settings.h"
 
 uint16_t accuracySignalA, accuracySignalB; //точность ШИМ, сколько периодов генератора МК укладывается в период ШИМ
 uint16_t pwmSignalStepsA, pwmSignalStepsB; //число периодов ШИМ в одном полупериоде сигнала
@@ -18,7 +17,7 @@ struct timerEventsBase
 	unsigned signalEnabled : 1;
 } timerEvents;
 
-void gen_init_timers(void)
+uint8_t GenInitTimers(void)
 {
 	memset( &timerEvents, 0, sizeof(timerEvents) );
   memset( pwmSignalArrayA, 0, sizeof(uint16_t) * maxSinSteps );	
@@ -60,7 +59,9 @@ void gen_init_timers(void)
 	NVIC_EnableIRQ(DMA1_Channel2_IRQn);
 	NVIC_EnableIRQ(DMA1_Channel6_IRQn);
 	DMA1_Channel6->CCR &= 0xFFFFFFFE;
-  DMA1_Channel2->CCR |= DMA_CCR2_EN;	
+  DMA1_Channel2->CCR |= DMA_CCR2_EN;
+
+  return 1;
 }
 
 void calculateSinArray( uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_sin, double _power_k )
@@ -94,7 +95,7 @@ void createSinArray(uint32_t _freq_pwm, uint32_t _freq_sin, double _power_k)
 };
 
 //________________startSignal____________________
-void updateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, uint8_t _signal_type)
+uint8_t updateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, uint8_t _signal_type)
 {
 	//принудительно убираем флаг
 	timerEvents.mayChangeArray = 0;
@@ -108,6 +109,8 @@ void updateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, ui
 	//подготовка флагов к плавному переключению сигнала
 	//по прерыванию DMA будет изменен буффер сигнала
 	timerEvents.mayChangeArray = 1;
+	
+	return 1;
 };
 
 void DMA_Interrupt_Change_Signal(void)

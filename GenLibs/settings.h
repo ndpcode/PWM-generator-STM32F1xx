@@ -6,7 +6,7 @@
 #define STM32F10X_MD
 #endif
 
-#include "stm32f10x.h"
+#include <stm32f10x.h>
 
 #define cpuFreq 72000000 //частота МК
 #define pi		3.14159265359 
