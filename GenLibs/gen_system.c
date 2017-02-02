@@ -1,12 +1,29 @@
 
-#include "stm32f10x.h"
+#include "settings.h"
 #include "gen_system.h"
 
-void Error_Handler(uint8_t Error_Code)
+void ErrorHandler(ErrorCode _code)
 {
+	switch ( _code )
+	{
+		case RESULT_ERROR:
+		break;
+		case RESULT_OK:
+		break;
+		
+		case RESULT_FATAL_ERROR:
+			//CloseAll();
+		  LED_GREEN_ON;
+		  LED_BLUE_ON;
+		  LED_RED_ON;		
+		break;
+		
+		case RESULT_IO_ERROR:
+		break;
+	}
 }
 
-uint8_t gen_system_set(void)
+uint8_t GenSystemSet(void)
 {
 	return RESULT_OK;
 }

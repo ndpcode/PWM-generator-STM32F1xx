@@ -1,9 +1,9 @@
 
-#include "stm32f10x.h"
+#include "settings.h"
 #include "gen_timers.h"
 #include <math.h>
 #include <string.h>
-#include "settings.h"
+#include <limits.h>
 
 uint16_t accuracySignalA, accuracySignalB; //точность ШИМ, сколько периодов генератора МК укладывается в период ШИМ
 uint16_t pwmSignalStepsA, pwmSignalStepsB; //число периодов ШИМ в одном полупериоде сигнала
@@ -18,7 +18,7 @@ struct timerEventsBase
 	unsigned signalEnabled : 1;
 } timerEvents;
 
-void gen_init_timers(void)
+uint8_t GenInitTimers(void)
 {
 	memset( &timerEvents, 0, sizeof(timerEvents) );
   memset( pwmSignalArrayA, 0, sizeof(uint16_t) * maxSinSteps );	
@@ -60,7 +60,9 @@ void gen_init_timers(void)
 	NVIC_EnableIRQ(DMA1_Channel2_IRQn);
 	NVIC_EnableIRQ(DMA1_Channel6_IRQn);
 	DMA1_Channel6->CCR &= 0xFFFFFFFE;
-  DMA1_Channel2->CCR |= DMA_CCR2_EN;	
+  DMA1_Channel2->CCR |= DMA_CCR2_EN;
+
+  return 1;
 }
 
 void calculateSinArray( uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_sin, double _power_k )
@@ -69,7 +71,9 @@ void calculateSinArray( uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_
 	uint16_t transistorsMinStep = transistorsMinTime * cpuFreq;	
 	uint16_t transistorsMaxStep = _acc_sin - transistorsDeadTime * cpuFreq;
 	for (i = 0; i < _arr_size; i++){
-		_sin_array[i] = (double)sin( (i+1)*pi / _arr_size )*_acc_sin*_power_k + transistorsMinStep;
+		_sin_array[i] = (double)sin( (i+1)*pi / _arr_size )*_acc_sin*_power_k;
+		//контроль на минимальный DutyCicle
+		if ( _sin_array[i] < transistorsMinStep ) _sin_array[i] = 0;
 		//контроль для DeadTime отдельно, для прозрачности
 		if ( _sin_array[i] > transistorsMaxStep ) _sin_array[i] = transistorsMaxStep;
 	};
@@ -78,37 +82,66 @@ void calculateSinArray( uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_
 	//_sin_array[_arr_size-1] = 0;
 }
 
-void createSinArray(uint32_t _freq_pwm, uint32_t _freq_sin, double _power_k)
-{	
-	if ( !timerEvents.currentArray ) //если текущий буфер - А
+void calculateDataArray(uint16_t *_signal_array, uint16_t _arr_size,
+                        uint16_t _acc_signal, double _power_k, uint8_t _signal_type)
+{
+  switch ( _signal_type )
 	{
-		accuracySignalB = cpuFreq / ( _freq_pwm );
-		pwmSignalStepsB = _freq_pwm / ( 2*_freq_sin );
-		calculateSinArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k);
-	} else
-	{ //теущий буфер - B
-		accuracySignalA = cpuFreq / ( _freq_pwm );
-		pwmSignalStepsA = _freq_pwm / ( 2*_freq_sin );
-		calculateSinArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k);
-	};	
+		case 1: //sinus
+			calculateSinArray(_signal_array, _arr_size, _acc_signal, _power_k);
+		break;
+		
+		case 2: //triangle
+			calculateSinArray(_signal_array, _arr_size, _acc_signal, _power_k);
+		break;
+	}		
 };
 
 //________________startSignal____________________
-void updateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, uint8_t _signal_type)
+uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, uint8_t _signal_type)
 {
+	//проверка частот
+	if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
+	//проверка коэффиицента мощности
+	if ( ( _power_k > MAX_POWER_K ) || ( _power_k < MIN_POWER_K ) ) return 0;
+	//проверка выбора типа сигнала
+	if ( ( _signal_type > 2 ) || ( _signal_type < 1 ) ) return 0;
+	
 	//принудительно убираем флаг
 	timerEvents.mayChangeArray = 0;
-	//выбор сигнала и заполнение массива
-	switch ( _signal_type )
+	//выбор массива и заполнение
+	if ( !timerEvents.currentArray ) //если текущий буфер - А
 	{
-		case 0: //sinus
-			createSinArray(_freq_pwm, _freq_signal, _power_k);			
-		break;
-	};	
+		accuracySignalB = cpuFreq / ( _freq_pwm );
+		pwmSignalStepsB = _freq_pwm / ( 2*_freq_signal );
+		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k, _signal_type);
+	} else
+	{ //теущий буфер - B
+		accuracySignalA = cpuFreq / ( _freq_pwm );
+		pwmSignalStepsA = _freq_pwm / ( 2*_freq_signal );
+		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k, _signal_type);
+	};				
 	//подготовка флагов к плавному переключению сигнала
 	//по прерыванию DMA будет изменен буффер сигнала
 	timerEvents.mayChangeArray = 1;
+	
+	return 1;
 };
+
+uint8_t FrequencyCheck(uint32_t _freq_pwm, uint32_t _freq_signal)
+{
+	//проверка возможности установить выбранные частоты
+	//проверка на переполнение uint16_t
+	if ( ( (uint32_t)cpuFreq / _freq_pwm ) > ( USHRT_MAX - 1 ) ) return 0;
+	//проверка на минимум "разрешения"(точности) сигнала
+	if ( ( (uint32_t)cpuFreq / _freq_pwm ) < 10 ) return 0;
+	//проверка на переполнение массива
+	if ( ( _freq_pwm / ( 2*_freq_signal ) ) > maxSinSteps ) return 0;
+	//проверка на минимум значений в массиве
+	if ( ( _freq_pwm / ( 2*_freq_signal ) ) < 10 ) return 0;
+	//иначе возвращаем 1
+	return 1;
+}
 
 void DMA_Interrupt_Change_Signal(void)
 {

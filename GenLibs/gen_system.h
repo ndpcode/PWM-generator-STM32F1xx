@@ -4,11 +4,15 @@
 
 #include <stdint.h>
 
-#define RESULT_OK 1
-#define RESULT_FATAL_ERROR 2
-#define RESULT_IO_ERROR 3
+typedef enum 
+{
+	RESULT_ERROR = 0,
+	RESULT_OK = 1,
+	RESULT_FATAL_ERROR = 3,
+	RESULT_IO_ERROR = 5
+} ErrorCode;
 
-void Error_Handler(uint8_t Error_Code);
-uint8_t gen_system_set(void);
+void ErrorHandler(ErrorCode _code);
+uint8_t GenSystemSet(void);
 
 #endif
