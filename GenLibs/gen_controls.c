@@ -45,24 +45,24 @@ volatile uint32_t* getPortFromLetter(char _portLetter)
 	return 0;
 }
 
-ControlsBaseStruct* pushNewElement(ControlsBaseStruct *_data)
+ControlsBaseStruct* pushNewElement(ControlsBaseStruct **_data)
 {
 	//добавляем новый элемент
 	ControlsBaseStruct *new_control = 0;
-	ControlsBaseStruct *last_control = getLastItem(_data);
+	ControlsBaseStruct *last_control = getLastItem(*_data);
 	//создаем новый элемент
 	new_control = (ControlsBaseStruct*)malloc( sizeof(ControlsBaseStruct) );
 	//проверка и выход если память не выделена
 	if ( !new_control  ) return 0;
-	if ( !_data )
+	if ( !*_data )
 	{
-		_data = new_control; 
+		*_data = new_control; 
 	} else if ( last_control )
 	{
 		last_control->next_control_element = new_control;
 	};
 	//проверка
-	if ( ( !_data ) && ( !last_control ) )
+	if ( ( !*_data ) && ( !last_control ) )
 	{
 		//удаляем, что-то пошло не так...
 		free(new_control);
@@ -71,44 +71,39 @@ ControlsBaseStruct* pushNewElement(ControlsBaseStruct *_data)
 	return new_control;
 }
 
-ControlsBaseStruct* popLastElement(ControlsBaseStruct *_data)
+ControlsBaseStruct* popLastElement(ControlsBaseStruct **_data)
 {
 	//удаляем последний элемент и возвращаем указатель на предпоследний
 	ControlsBaseStruct *last_control = 0;
 	ControlsBaseStruct *penult_control = 0;
-	if ( !_data ) return 0;
-	last_control = _data;
+	if ( !*_data ) return 0;
+	last_control = *_data;
 	while ( last_control->next_control_element )
 	{
 		penult_control = last_control;
 		last_control = (ControlsBaseStruct*)last_control->next_control_element;
 	};
 	free(last_control);
-	penult_control->next_control_element = 0;
+	if ( penult_control )
+	{
+		penult_control->next_control_element = 0;
+	} else
+	{
+		*_data = 0;
+	};
 	return penult_control;
 }
 
 uint8_t ControlsDataClear(void)
 {
-	ControlsBaseStruct **last_element;
-	if ( ButtonsData )
+	while ( ButtonsData )
 	{
-		*last_element = getLastItem(ButtonsData);
-		while ( *last_element )
-		{
-			free(*last_element);
-			*last_element = getLastItem(ButtonsData);
-		};
-	};
-	if ( ValcoderData )
+			popLastElement(&ButtonsData);
+	}			
+	while ( ValcoderData )
 	{
-		*last_element = getLastItem(ValcoderData);
-		while ( *last_element )
-		{
-			free(*last_element);
-			*last_element = getLastItem(ValcoderData);
-		};
-	};		
+			popLastElement(&ValcoderData);
+	}			
 	return 1;
 };
 
@@ -121,7 +116,7 @@ uint8_t ControlsRegNewButton(char _portLetter, uint8_t _pinNumber, void (*_click
 	if ( _pinNumber > 15 ) return 0;
 	
 	//создаем новый элемент
-	new_button = pushNewElement(ButtonsData);
+	new_button = pushNewElement(&ButtonsData);
 	if ( !new_button ) return 0;
 	
 	//заполняем данные элемента
@@ -145,7 +140,7 @@ uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
 	if ( ( _pinNumberCCW > 15 ) || ( _pinNumberCW > 15 ) ) return 0;
 	
 	//создаем новый элемент CCW
-	new_valcoder = pushNewElement(ValcoderData);
+	new_valcoder = pushNewElement(&ValcoderData);
   if ( !new_valcoder ) return 0;
 	//заполняем данные элемента
 	new_valcoder->port_idr_addr = getPortFromLetter(_portLetterCCW);
@@ -154,11 +149,11 @@ uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
   new_valcoder->event_code = _event_ccw_code;
 	
 	//создаем новый элемент CW
-	new_valcoder = pushNewElement(ValcoderData);
+	new_valcoder = pushNewElement(&ValcoderData);
   if ( !new_valcoder ) 
 	{
 		//удаляем предыдущий элемент и выходим
-		popLastElement(ValcoderData);
+		popLastElement(&ValcoderData);
 		return 0;
 	};
 	//заполняем данные элемента

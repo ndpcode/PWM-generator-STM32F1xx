@@ -95,7 +95,7 @@ HD44780_Result hd44780_init(HD44780 *display, HD44780_Mode mode,
 
   display->cfg = *config;
 	
-  if (gpios->configure != NULL)
+ /* if (gpios->configure != NULL)
   {
     HD44780_RETURN_IF_ERROR(gpios->configure(gpios, HD44780_PIN_RS, HD44780_PINMODE_OUTPUT));
     HD44780_RETURN_IF_ERROR(gpios->configure(gpios, HD44780_PIN_ENABLE, HD44780_PINMODE_OUTPUT));
@@ -105,10 +105,10 @@ HD44780_Result hd44780_init(HD44780 *display, HD44780_Mode mode,
 
     if (display->cfg.options & HD44780_OPT_USE_BACKLIGHT)
       HD44780_RETURN_IF_ERROR(gpios->configure(gpios, HD44780_PIN_BACKLIGHT, HD44780_PINMODE_OUTPUT));
-  }
-
+  } 
+  del by bsc!
   if (display->cfg.options & HD44780_OPT_USE_BACKLIGHT)
-    HD44780_RETURN_IF_ERROR(gpios->write(gpios, HD44780_PIN_BACKLIGHT, HD44780_PINSTATE_LOW));
+    HD44780_RETURN_IF_ERROR(gpios->write(gpios, HD44780_PIN_BACKLIGHT, HD44780_PINSTATE_LOW));*/
 
   if (mode == HD44780_MODE_4BIT)
   {
