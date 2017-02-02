@@ -30,29 +30,17 @@ ControlsBaseStruct* getLastItem(ControlsBaseStruct *_data)
 }
 
 volatile uint32_t* getPortFromLetter(char _portLetter)
-{
+{	
 	//без проверок буквы порта
 	//возвращаем адрес на порт
 	switch ( _portLetter )
 	{
-		case 'A':
-			return &GPIOA->IDR;			
-		break;
-		case 'B':
-			return &GPIOB->IDR;			
-		break;
-		case 'C':
-			return &GPIOC->IDR;			
-		break;
-		case 'D':
-			return &GPIOD->IDR;			
-		break;
-	  case 'E':
-			return &GPIOE->IDR;			
-		break;
-		case 'F':
-			return &GPIOF->IDR;			
-		break;
+		case 'A': return &GPIOA->IDR;			
+		case 'B': return &GPIOB->IDR;			
+		case 'C': return &GPIOC->IDR;			
+		case 'D': return &GPIOD->IDR;			
+	  case 'E': return &GPIOE->IDR;			
+		case 'F': return &GPIOF->IDR;
 	};
 	return 0;
 }
@@ -182,7 +170,7 @@ uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
   return 1;	
 };
 
-uint32_t ControlsUpdateEvents(UpdateEventsParams _params)
+uint32_t ControlsUpdateEvents(uint32_t _params)
 {
 	//обработка событий и возврат результатов
 	uint32_t ReturnedEvents = 0;
@@ -205,7 +193,8 @@ uint32_t ControlsUpdateEvents(UpdateEventsParams _params)
 				//если возвращаем код события
 				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element->event_code;
 				//если вызываем обработчик события
-				if ( _params & UPDEVENTS_HANDLERS_LAUNCH ) control_element->_control_click_func();
+				if ( ( _params & UPDEVENTS_HANDLERS_LAUNCH ) &&
+             ( control_element->_control_click_func ) ) control_element->_control_click_func();
 			} else
 			{
 				//кнопка срабатывает повторно/удерживается
@@ -241,7 +230,8 @@ uint32_t ControlsUpdateEvents(UpdateEventsParams _params)
 				//если возвращаем код события
 				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element->event_code;
 				//если вызываем обработчик события
-				if ( _params & UPDEVENTS_HANDLERS_LAUNCH ) control_element->_control_click_func();				
+				if ( ( _params & UPDEVENTS_HANDLERS_LAUNCH ) &&
+             ( control_element->_control_click_func ) ) control_element->_control_click_func();				
 			}
 		} else
 		//опрос CW - по часовой
@@ -256,7 +246,8 @@ uint32_t ControlsUpdateEvents(UpdateEventsParams _params)
 				//если возвращаем код события
 				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element_cw->event_code;
 				//если вызываем обработчик события
-				if ( _params & UPDEVENTS_HANDLERS_LAUNCH ) control_element_cw->_control_click_func();				
+				if ( ( _params & UPDEVENTS_HANDLERS_LAUNCH ) &&
+             ( control_element_cw->_control_click_func ) ) control_element_cw->_control_click_func();				
 			}
 		} else
 		//опрос для сброса флагов

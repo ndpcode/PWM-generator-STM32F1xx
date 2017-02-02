@@ -18,6 +18,6 @@ uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
 	                             char _portLetterCW, uint8_t _pinNumberCW,
 															 void (*_ccw_func)(void), uint32_t _event_ccw_code,
 															 void (*_cw_func)(void), uint32_t _event_cw_code);																 
-uint32_t ControlsUpdateEvents(UpdateEventsParams _params);
+uint32_t ControlsUpdateEvents(uint32_t _params);
 
 #endif
