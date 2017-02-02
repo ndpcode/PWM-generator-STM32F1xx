@@ -8,8 +8,8 @@ typedef enum
 {
 	RESULT_ERROR = 0,
 	RESULT_OK = 1,
-	RESULT_FATAL_ERROR,
-	RESULT_IO_ERROR
+	RESULT_FATAL_ERROR = 3,
+	RESULT_IO_ERROR = 5
 } ErrorCode;
 
 void ErrorHandler(ErrorCode _code);

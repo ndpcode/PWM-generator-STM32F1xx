@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 
+#define VALCODER_ERROR 0x0F
+
 typedef enum
 {
 	UPDEVENTS_GETEVENTS  = 1,
