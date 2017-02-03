@@ -21,6 +21,11 @@ void ErrorHandler(ErrorCode _code)
 		break;
 		
 		case RESULT_IO_ERROR:
+			//CloseAll();
+		  LED_GREEN_ON;
+		  LED_RED_ON;
+		  //ждать до аппаратного сброса
+      while (1);
 		break;
 	}
 }

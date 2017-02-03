@@ -12,9 +12,15 @@
 #include <limits.h>
 
 HD44780 Display;
+HD44780_Config DisplayConfig;
+HD44780_STM32F10x_GPIO_Driver DisplayGPIODriver;
 
 uint8_t InitDefaults(void);
 uint8_t DisplayInit(void);
+void valcoderbuttonclick(void)
+{
+	GPIOA->ODR = GPIOA->ODR ^ GPIO_ODR_ODR0;
+}
 
 int main(void)
 {
@@ -26,6 +32,7 @@ int main(void)
 	GenSystemSet();
 	//настройка портов
 	GenInitPorts();
+	
 	//разрешаем доступ к flash MCU
 	if ( FlashAccessEnable() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	//чтение настроек из flash
@@ -34,7 +41,7 @@ int main(void)
 	if ( GenInitTimers() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
 	//инициация дисплея
-//	if ( DisplayInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+  if ( DisplayInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
 	//инициация кнопок
 	if ( ControlsRegNewButton('B', 10, 0, EVENT_BUTTON1_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
@@ -43,16 +50,17 @@ int main(void)
 	if ( ControlsRegNewButton('B', 13, 0, EVENT_BUTTON4_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	if ( ControlsRegNewButton('B', 14, 0, EVENT_BUTTON5_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	if ( ControlsRegNewButton('B', 15, 0, EVENT_BUTTON6_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('A', 3, 0, EVENT_VALCODER_BUTTON_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('A', 3, valcoderbuttonclick, EVENT_VALCODER_BUTTON_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
 	//инициация валкодера
 	if ( ControlsRegNewValcoder('A', 2,
                               'A', 4,
 	                             0, EVENT_VALCODER_CCW,
                                0, EVENT_VALCODER_CW) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	ErrorHandler(RESULT_FATAL_ERROR);
-	      hd44780_clear(&Display);
-      hd44780_write_string(&Display, "Hello test _+");
+	
+	hd44780_clear(&Display);
+  hd44780_write_string(&Display, "Hello test _+");
+	//ErrorHandler(RESULT_FATAL_ERROR);
 	
 	while(1)
 	{
@@ -68,10 +76,13 @@ uint8_t InitDefaults(void)
 	return RESULT_OK;
 }
 
+void mydelay(unsigned short iii)
+{
+}
+
 uint8_t DisplayInit(void)
 {
-	HD44780_Config DisplayConfig;
-	HD44780_STM32F10x_GPIO_Driver DisplayGPIODriver;
+
 	//настройка структуры порта
   HD44780_STM32F10x_Pinout display_pins =
   {
@@ -112,5 +123,10 @@ uint8_t DisplayInit(void)
   hd44780_init(&Display, HD44780_MODE_4BIT, &DisplayConfig, 16, 2, HD44780_CHARSIZE_5x8);
 	
 	return RESULT_OK;
+}
+
+void HardFault_Handler(void)
+{
+	ErrorHandler(RESULT_IO_ERROR);
 }
 

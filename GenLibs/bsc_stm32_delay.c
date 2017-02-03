@@ -54,8 +54,7 @@ void delayUS(unsigned short time)
 	TIM4->PSC = 35; // 36 MHz div 36 = 1 MHz
 	TIM4->CNT = 0;
   TIM4->ARR = time;  // number periods with length = 1us	
-	dwt_timestamp = DWT_CYCCNT;
   TIM4->CR1 |= TIM_CR1_CEN;  // start
   while ((TIM4->CR1 & TIM_CR1_CEN)!=0); // wait for end
-	dwt_timestamp = DWT_CYCCNT - dwt_timestamp;*/
+	*/
 };

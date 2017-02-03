@@ -335,7 +335,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>.\GenLibs;.\GenLibs\HD44780_master</IncludePath>
+              <IncludePath>.\GenLibs;.\GenLibs\HD44780</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -425,14 +425,14 @@
               <FilePath>.\GenLibs\menu_controller.c</FilePath>
             </File>
             <File>
-              <FileName>hd44780.c</FileName>
+              <FileName>hd44780display.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\GenLibs\HD44780_master\hd44780.c</FilePath>
+              <FilePath>.\GenLibs\HD44780\hd44780display.c</FilePath>
             </File>
             <File>
-              <FileName>hd44780_stm32f10x.c</FileName>
+              <FileName>stm32f1xx_hd44780_driver.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\GenLibs\HD44780_master\hd44780_stm32f10x.c</FilePath>
+              <FilePath>.\GenLibs\HD44780\stm32f1xx_hd44780_driver.c</FilePath>
             </File>
           </Files>
         </Group>
