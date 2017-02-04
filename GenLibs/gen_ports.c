@@ -19,9 +19,10 @@ uint8_t GenInitPorts(void)
 	//PORT A, B, C power on
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN; // port A,B,C power on
 	RCC->APB2ENR |= RCC_APB2ENR_AFIOEN; //Alternate Function I/O clock enable
-	//PB 4 - free! Full SWJ (JTAG-DP + SW-DP) but without JNTRST
-	AFIO->MAPR &= ~AFIO_MAPR_SWJ_CFG_DISABLE;
-	AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_NOJNTRST;
+	//PB 4 and PB 3 - free! JTAG-DP Disabled and SW-DP Enabled
+	AFIO->MAPR &= ~AFIO_MAPR_SWJ_CFG;
+	AFIO->MAPR |= AFIO_MAPR_SWJ_CFG_JTAGDISABLE;
+	
 	//set PORTA
 	GPIOA->CRL = MODE_OUTPUT_PP(0, L, 2) | //PA 0 - LED BLUE
                MODE_OUTPUT_PP(1, L, 2) | //PA 1 - LED RED

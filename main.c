@@ -1,19 +1,16 @@
 
 #include "settings.h"
+#include "bsc_stm32_delay.h"
 #include "gen_system.h"
 #include "gen_flash.h"
 #include "gen_ports.h"
 #include "gen_timers.h"
 #include "gen_controls.h"
+#include "hd44780display.h"
 //#include "gen_menu.h"
-#include "bsc_stm32_delay.h"
-#include "hd44780.h"
-#include "hd44780_stm32f10x.h"
 #include <limits.h>
 
-HD44780 Display;
-HD44780_Config DisplayConfig;
-HD44780_STM32F10x_GPIO_Driver DisplayGPIODriver;
+HD44780_DISPLAY_STRUCT Display;
 
 uint8_t InitDefaults(void);
 uint8_t DisplayInit(void);
@@ -58,8 +55,12 @@ int main(void)
 	                             0, EVENT_VALCODER_CCW,
                                0, EVENT_VALCODER_CW) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
-	hd44780_clear(&Display);
-  hd44780_write_string(&Display, "Hello test _+");
+	HD44780DisplaySendByte(&Display, 'T', HD44780_DISPLAY_DATA);
+	HD44780DisplaySendByte(&Display, 'e', HD44780_DISPLAY_DATA);
+	HD44780DisplaySendByte(&Display, 's', HD44780_DISPLAY_DATA);
+	HD44780DisplaySendByte(&Display, 'T', HD44780_DISPLAY_DATA);
+	HD44780DisplaySendByte(&Display, ' ', HD44780_DISPLAY_DATA);
+	HD44780DisplaySendByte(&Display, '1', HD44780_DISPLAY_DATA);
 	//ErrorHandler(RESULT_FATAL_ERROR);
 	
 	while(1)
@@ -82,45 +83,35 @@ void mydelay(unsigned short iii)
 
 uint8_t DisplayInit(void)
 {
-
-	//настройка структуры порта
-  HD44780_STM32F10x_Pinout display_pins =
-  {
-    {
-      /* RS        */  { GPIOB, GPIO_Pin_3 },
-      /* ENABLE    */  { GPIOB, GPIO_Pin_9 },
-      /* RW        */  { GPIOB, GPIO_Pin_8 },
-      /* Backlight */  { 0, 0 },
-      /* DP0       */  { 0, 0 },
-      /* DP1       */  { 0, 0 },
-      /* DP2       */  { 0, 0 },
-      /* DP3       */  { 0, 0 },
-      /* DP4       */  { GPIOB, GPIO_Pin_4 },
-      /* DP5       */  { GPIOB, GPIO_Pin_5 },
-      /* DP6       */  { GPIOB, GPIO_Pin_6 },
-      /* DP7       */  { GPIOB, GPIO_Pin_7 },
-    }
-  };
-	//настройка драйвера дисплея
-	//стандартный интерфейс
-	DisplayGPIODriver.interface = HD44780_STM32F10X_PINDRIVER_INTERFACE;
-	//присваиваем заполненную структуру порта
-	DisplayGPIODriver.pinout = display_pins;
-	//обработчик ошибок
-  DisplayGPIODriver.assert_failure_handler = 0;
-
-	//заполняем display config
-	//GPIO драйвер
-  DisplayConfig.gpios = (HD44780_GPIO_Interface*)&DisplayGPIODriver;
-	//назначаем функцию задержки
-	DisplayConfig.delay_microseconds = delayUS;
-	//обработчик ошибок
-	DisplayConfig.assert_failure_handler = 0;
-	//испольщуем порт RW как обычно
-	DisplayConfig.options = HD44780_OPT_USE_RW;
-  
-	//выполняем инициализацию
-  hd44780_init(&Display, HD44780_MODE_4BIT, &DisplayConfig, 16, 2, HD44780_CHARSIZE_5x8);
+	//заполняем структуру порта
+	unsigned char displayPortConfig[11][2] =
+	{ 'X', 0, //HD44780_DRIVER_DATA_0 
+    'X', 0, //HD44780_DRIVER_DATA_1
+    'X', 0, //HD44780_DRIVER_DATA_2
+    'X', 0, //HD44780_DRIVER_DATA_3
+    'B', 4, //HD44780_DRIVER_DATA_4
+    'B', 5, //HD44780_DRIVER_DATA_5
+    'B', 6, //HD44780_DRIVER_DATA_6
+    'B', 7, //HD44780_DRIVER_DATA_7
+    'B', 9, //HD44780_DRIVER_ENABLE
+    'B', 3, //HD44780_DRIVER_REG_SELECT
+    'B', 8 //HD44780_DRIVER_READ_WRITE
+	 };
+	Display.portStruct = HD44780DriverInit(&displayPortConfig[0][0], 1);
+	if ( !Display.portStruct ) return RESULT_ERROR;
+	Display.delayUSFunc = delayUS;
+	 
+	//инициализация дисплея
+	if ( HD44780DisplayInit(&Display) != HD44780_DISPLAY_OK )
+	{
+		//удаляем драйвер из памяти
+		HD44780DriverDestroy(&Display.portStruct);
+		//выходим
+		return RESULT_ERROR;
+	};
+	
+	//очистка дисплея
+	HD44780DisplayClear(&Display);
 	
 	return RESULT_OK;
 }
