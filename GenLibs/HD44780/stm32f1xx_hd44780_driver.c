@@ -80,19 +80,28 @@ unsigned char HD44780DriverSetPin(HD44780_PORT_STRUCT *_portStruct,
 		case HD44780_PIN_DIRECTION_INPUT:
       *(unsigned int*)(&_portStruct->DisplayPort[_pinName].portAddress->CRL +
 				                  (_portStruct->DisplayPort[_pinName].pinIndex/8) ) &=
-			~(0x0F << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );			
+			~(0x0F << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
+      *(unsigned int*)(&_portStruct->DisplayPort[_pinName].portAddress->CRL +
+				                  (_portStruct->DisplayPort[_pinName].pinIndex/8) ) |=
+			(STM32F1XXPIN_DIRECTION_INPUT << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );			
 		break;
 		
 		case HD44780_PIN_DIRECTION_OUTPUT:
       *(unsigned int*)(&_portStruct->DisplayPort[_pinName].portAddress->CRL +
 				                  (_portStruct->DisplayPort[_pinName].pinIndex/8) ) &=
-			~(0x05 << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
+			~(0x0F << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
+      *(unsigned int*)(&_portStruct->DisplayPort[_pinName].portAddress->CRL +
+				                  (_portStruct->DisplayPort[_pinName].pinIndex/8) ) |=
+			(STM32F1XXPIN_DIRECTION_OUTPUT << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
 		break;
 		
 		case HD44780_PIN_DIRECTION_FLOATING:
       *(unsigned int*)(&_portStruct->DisplayPort[_pinName].portAddress->CRL +
 				                  (_portStruct->DisplayPort[_pinName].pinIndex/8) ) &=
-			~(0x04 << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
+			~(0x0F << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
+      *(unsigned int*)(&_portStruct->DisplayPort[_pinName].portAddress->CRL +
+				                  (_portStruct->DisplayPort[_pinName].pinIndex/8) ) |=
+			(STM32F1XXPIN_DIRECTION_FLOATING << ( _portStruct->DisplayPort[_pinName].pinIndex - (_portStruct->DisplayPort[_pinName].pinIndex/8)*8 )*4 );
 		break;
 	};
 	return HD44780_DRIVER_OK;	

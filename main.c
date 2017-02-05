@@ -55,12 +55,10 @@ int main(void)
 	                             0, EVENT_VALCODER_CCW,
                                0, EVENT_VALCODER_CW) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
-	HD44780DisplaySendByte(&Display, 'T', HD44780_DISPLAY_DATA);
-	HD44780DisplaySendByte(&Display, 'e', HD44780_DISPLAY_DATA);
-	HD44780DisplaySendByte(&Display, 's', HD44780_DISPLAY_DATA);
-	HD44780DisplaySendByte(&Display, 'T', HD44780_DISPLAY_DATA);
-	HD44780DisplaySendByte(&Display, ' ', HD44780_DISPLAY_DATA);
-	HD44780DisplaySendByte(&Display, '1', HD44780_DISPLAY_DATA);
+	HD44780DisplayWriteString(&Display, "Это ", 1, 3);
+	HD44780DisplayWriteString(&Display, "X", 2, 13);
+  HD44780DisplayWriteDouble(&Display, -8347.596, 3, 2, 3);
+
 	//ErrorHandler(RESULT_FATAL_ERROR);
 	
 	while(1)
@@ -75,10 +73,6 @@ int main(void)
 uint8_t InitDefaults(void)
 {
 	return RESULT_OK;
-}
-
-void mydelay(unsigned short iii)
-{
 }
 
 uint8_t DisplayInit(void)
@@ -100,6 +94,9 @@ uint8_t DisplayInit(void)
 	Display.portStruct = HD44780DriverInit(&displayPortConfig[0][0], 1);
 	if ( !Display.portStruct ) return RESULT_ERROR;
 	Display.delayUSFunc = delayUS;
+	Display.displayEntryMode = HD44780_FLAG_ENTRYSHIFTOFF | HD44780_FLAG_ENTRYRIGHT;
+	Display.displayOnOffControl = HD44780_FLAG_DISPLAYON | HD44780_FLAG_CURSOROFF | HD44780_FLAG_BLINKOFF;
+	Display.displayFunctionSet = HD44780_FLAG_4BITMODE | HD44780_FLAG_2LINE | HD44780_FLAG_5x10DOTS;
 	 
 	//инициализация дисплея
 	if ( HD44780DisplayInit(&Display) != HD44780_DISPLAY_OK )
