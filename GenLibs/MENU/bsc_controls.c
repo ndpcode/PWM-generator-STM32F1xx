@@ -1,8 +1,12 @@
 
 #include "settings.h"
-#include "gen_controls.h"
+#include "bsc_controls.h"
 #include <stdlib.h>
 #include <string.h>
+
+//**********************************************************************************************************************//
+//Внутренние определения вспомогательных структур и функций
+//**********************************************************************************************************************//
 
 typedef struct 
 {
@@ -10,26 +14,15 @@ typedef struct
 	uint32_t pin_addr;
 	void ( *_control_click_func )(void);
 	unsigned control_busy_flag : 1;
-	uint32_t event_code;
+	SYS_EVENTS_DATA event_click_code;
+	SYS_EVENTS_DATA event_pressed_code;
 	void *next_control_element;
 } ControlsBaseStruct;
 
 ControlsBaseStruct *ButtonsData;
 ControlsBaseStruct *ValcoderData;
 
-ControlsBaseStruct* getLastItem(ControlsBaseStruct *_data)
-{
-	ControlsBaseStruct *last_element = _data;
-	if ( !_data ) return 0;
-	if ( !_data->next_control_element ) return _data;
-	while ( last_element->next_control_element )
-	{
-		last_element = (ControlsBaseStruct*)last_element->next_control_element;
-	};
-	return last_element;
-}
-
-volatile uint32_t* getPortFromLetter(char _portLetter)
+static volatile uint32_t* getPortFromLetter(char _portLetter)
 {	
 	//без проверок буквы порта
 	//возвращаем адрес на порт
@@ -45,7 +38,19 @@ volatile uint32_t* getPortFromLetter(char _portLetter)
 	return 0;
 }
 
-ControlsBaseStruct* pushNewElement(ControlsBaseStruct **_data)
+static ControlsBaseStruct* getLastItem(ControlsBaseStruct *_data)
+{
+	ControlsBaseStruct *last_element = _data;
+	if ( !_data ) return 0;
+	if ( !_data->next_control_element ) return _data;
+	while ( last_element->next_control_element )
+	{
+		last_element = (ControlsBaseStruct*)last_element->next_control_element;
+	};
+	return last_element;
+}
+
+static ControlsBaseStruct* pushNewElement(ControlsBaseStruct **_data)
 {
 	//добавляем новый элемент
 	ControlsBaseStruct *new_control = 0;
@@ -71,7 +76,7 @@ ControlsBaseStruct* pushNewElement(ControlsBaseStruct **_data)
 	return new_control;
 }
 
-ControlsBaseStruct* popLastElement(ControlsBaseStruct **_data)
+static ControlsBaseStruct* popLastElement(ControlsBaseStruct **_data)
 {
 	//удаляем последний элемент и возвращаем указатель на предпоследний
 	ControlsBaseStruct *last_control = 0;
@@ -94,6 +99,10 @@ ControlsBaseStruct* popLastElement(ControlsBaseStruct **_data)
 	return penult_control;
 }
 
+//**********************************************************************************************************************//
+//Пользовательские функции для использования вне модуля
+//**********************************************************************************************************************//
+
 uint8_t ControlsDataClear(void)
 {
 	while ( ButtonsData )
@@ -107,7 +116,8 @@ uint8_t ControlsDataClear(void)
 	return 1;
 };
 
-uint8_t ControlsRegNewButton(char _portLetter, uint8_t _pinNumber, void (*_click_func)(void), uint32_t _event_code)
+uint8_t ControlsRegNewButton(char _portLetter, uint8_t _pinNumber, void (*_click_func)(void),
+                             SYS_EVENTS_DATA _event_click_code, SYS_EVENTS_DATA _event_pressed_code)
 {
 	ControlsBaseStruct *new_button = 0;
 	//проверка буквы порта
@@ -123,14 +133,15 @@ uint8_t ControlsRegNewButton(char _portLetter, uint8_t _pinNumber, void (*_click
 	new_button->port_idr_addr = getPortFromLetter(_portLetter);
 	new_button->pin_addr = 1 << _pinNumber;
 	new_button->_control_click_func = _click_func;
-  new_button->event_code = _event_code;
+  new_button->event_click_code = _event_click_code;
+	new_button->event_pressed_code = _event_pressed_code;
   return 1;	
 };
 
 uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
 	                             char _portLetterCW, uint8_t _pinNumberCW,
-															 void (*_ccw_func)(void), uint32_t _event_ccw_code,
-															 void (*_cw_func)(void), uint32_t _event_cw_code)
+															 void (*_ccw_func)(void), SYS_EVENTS_DATA _event_ccw_code,
+															 void (*_cw_func)(void), SYS_EVENTS_DATA _event_cw_code)
 {
 	ControlsBaseStruct *new_valcoder = 0;
 	//проверка буквы порта
@@ -146,7 +157,8 @@ uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
 	new_valcoder->port_idr_addr = getPortFromLetter(_portLetterCCW);
 	new_valcoder->pin_addr = 1 << _pinNumberCCW;
 	new_valcoder->_control_click_func = _ccw_func;
-  new_valcoder->event_code = _event_ccw_code;
+  new_valcoder->event_click_code = _event_ccw_code;
+	new_valcoder->event_pressed_code = 0;
 	
 	//создаем новый элемент CW
 	new_valcoder = pushNewElement(&ValcoderData);
@@ -160,12 +172,13 @@ uint8_t ControlsRegNewValcoder(char _portLetterCCW, uint8_t _pinNumberCCW,
 	new_valcoder->port_idr_addr = getPortFromLetter(_portLetterCW);
 	new_valcoder->pin_addr = 1 << _pinNumberCW;
 	new_valcoder->_control_click_func = _cw_func;
-  new_valcoder->event_code = _event_cw_code;
+  new_valcoder->event_click_code = _event_cw_code;
+	new_valcoder->event_pressed_code = 0;
 	
   return 1;	
 };
 
-uint32_t ControlsUpdateEvents(uint32_t _params)
+SYS_EVENTS_DATA ControlsUpdateEvents(uint32_t _params)
 {
 	//обработка событий и возврат результатов
 	uint32_t ReturnedEvents = 0;
@@ -186,14 +199,17 @@ uint32_t ControlsUpdateEvents(uint32_t _params)
 				control_element->control_busy_flag = 1;
 				//событие по кнопке
 				//если возвращаем код события
-				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element->event_code;
+				if ( _params & UPDEVENTS_GETEVENTS )
+					ReturnedEvents |= control_element->event_click_code | control_element->event_pressed_code;
 				//если вызываем обработчик события
 				if ( ( _params & UPDEVENTS_HANDLERS_LAUNCH ) &&
              ( control_element->_control_click_func ) ) control_element->_control_click_func();
 			} else
 			{
 				//кнопка срабатывает повторно/удерживается
+				//если возвращаем код события
 				control_element->control_busy_flag = 1;
+				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element->event_pressed_code;
 			};
 		} else
 		{
@@ -220,10 +236,11 @@ uint32_t ControlsUpdateEvents(uint32_t _params)
 			//если событие впервые
 			if ( !control_element->control_busy_flag )
 			{
-				//устанавливаем флаг события
+				//устанавливаем флаги события
 				control_element->control_busy_flag = 1;
+				control_element_cw->control_busy_flag = 1;
 				//если возвращаем код события
-				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element->event_code;
+				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element->event_click_code;
 				//если вызываем обработчик события
 				if ( ( _params & UPDEVENTS_HANDLERS_LAUNCH ) &&
              ( control_element->_control_click_func ) ) control_element->_control_click_func();				
@@ -236,10 +253,11 @@ uint32_t ControlsUpdateEvents(uint32_t _params)
 			//если событие впервые
 			if ( !control_element_cw->control_busy_flag )
 			{
-				//устанавливаем флаг события
+				//устанавливаем флаги события
+				control_element->control_busy_flag = 1;
 				control_element_cw->control_busy_flag = 1;
 				//если возвращаем код события
-				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element_cw->event_code;
+				if ( _params & UPDEVENTS_GETEVENTS ) ReturnedEvents |= control_element_cw->event_click_code;
 				//если вызываем обработчик события
 				if ( ( _params & UPDEVENTS_HANDLERS_LAUNCH ) &&
              ( control_element_cw->_control_click_func ) ) control_element_cw->_control_click_func();				
@@ -257,6 +275,6 @@ uint32_t ControlsUpdateEvents(uint32_t _params)
 		control_element = (ControlsBaseStruct*)control_element_cw->next_control_element;
 	}
 	
-	return 1;
+	return ReturnedEvents;
 }
 

@@ -2,25 +2,48 @@
 #include "settings.h"
 #include "bsc_stm32_delay.h"
 #include "gen_system.h"
+#include "gen_rtc.h"
 #include "gen_flash.h"
 #include "gen_ports.h"
 #include "gen_timers.h"
-#include "gen_controls.h"
 #include "hd44780display.h"
-//#include "gen_menu.h"
+#include "bsc_controls.h"
+#include "bsc_tree_menu.h"
+#include "gen_menu.h"
 #include <limits.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define getTimeMS (uint32_t)( ( (RTC->CNTH << 16 ) | RTC->CNTL ) % 1000 )
+#define getTimeS (uint32_t)( ( (RTC->CNTH << 16 ) | RTC->CNTL ) % 60000 ) / 1000
 
 HD44780_DISPLAY_STRUCT Display;
+TREE_MENU *GenMenu;
+
+//структура основных параметров, размер 24(32) байт, кратный 2 для упрощения сохранения на flash
+struct MainConfig
+{
+	unsigned isImmediateUpdate : 1;
+	uint32_t freqPWM;
+	uint32_t freqSignal;
+	double powerK;
+	uint8_t signalType;
+} GenConfig;
+
+
 
 uint8_t InitDefaults(void);
 uint8_t DisplayInit(void);
-void valcoderbuttonclick(void)
-{
-	GPIOA->ODR = GPIOA->ODR ^ GPIO_ODR_ODR0;
-}
+SYS_EVENTS_DATA GenGetEventsFunc(void);
+uint8_t MenuInit(void);
+
+
 
 int main(void)
 {
+	//настройка RTC
+	GenInitRTC();
+	
 	InitDefaults();
 	//разрешаем использование функций delay библиотеки bsc_stm32_delay
 	delayEnable();
@@ -41,13 +64,15 @@ int main(void)
   if ( DisplayInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
 	//инициация кнопок
-	if ( ControlsRegNewButton('B', 10, 0, EVENT_BUTTON1_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('B', 11, 0, EVENT_BUTTON2_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('B', 12, 0, EVENT_BUTTON3_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('B', 13, 0, EVENT_BUTTON4_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('B', 14, 0, EVENT_BUTTON5_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('B', 15, 0, EVENT_BUTTON6_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	if ( ControlsRegNewButton('A', 3, valcoderbuttonclick, EVENT_VALCODER_BUTTON_CLICK) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('B', 10, 0, EVENT_BUTTON1_CLICK, 0) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('B', 11, 0, EVENT_BUTTON2_CLICK, 0) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('B', 12, 0, EVENT_BUTTON3_CLICK, 0) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('B', 13, 0, EVENT_BUTTON4_CLICK, 0) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('B', 14, 0, EVENT_BUTTON5_CLICK, 0) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('B', 15, 0, EVENT_BUTTON6_CLICK, 0) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( ControlsRegNewButton('A', 3, 0,
+		                        EVENT_VALCODER_BUTTON_CLICK,
+	                          EVENT_VALCODER_BUTTON_PRESSED) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
 	//инициация валкодера
 	if ( ControlsRegNewValcoder('A', 2,
@@ -55,16 +80,18 @@ int main(void)
 	                             0, EVENT_VALCODER_CCW,
                                0, EVENT_VALCODER_CW) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
-	HD44780DisplayWriteString(&Display, "Это ", 1, 3);
-	HD44780DisplayWriteString(&Display, "X", 2, 13);
-  HD44780DisplayWriteDouble(&Display, -8347.596, 3, 2, 3);
-
+	//создание меню
+	if ( MenuInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	
 	//ErrorHandler(RESULT_FATAL_ERROR);
+	
+	//запуск ШИМ
+	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
 	
 	while(1)
 	{
-		//опрос кнопок
-		ControlsUpdateEvents(UPDEVENTS_GETEVENTS | UPDEVENTS_HANDLERS_LAUNCH);
+		//обновление меню и элементов управления
+		MenuUpdate(GenMenu, getTimeS, getTimeMS);
 	};
 	
 	ControlsDataClear();
@@ -72,6 +99,19 @@ int main(void)
 
 uint8_t InitDefaults(void)
 {
+	//read from flash
+	memset(&GenConfig, 0, sizeof(GenConfig));
+	FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
+	//проверка наличия сохраненных данных
+	if ( GenConfig.freqPWM == 0xFFFFFFFF )
+	{
+		//данные по-умолчанию
+		GenConfig.freqPWM = 20000;
+		GenConfig.freqSignal = 100;
+		GenConfig.powerK = 100.0;
+		GenConfig.signalType = 1;
+		GenConfig.isImmediateUpdate = 0;
+	};	
 	return RESULT_OK;
 }
 
@@ -110,6 +150,28 @@ uint8_t DisplayInit(void)
 	//очистка дисплея
 	HD44780DisplayClear(&Display);
 	
+	return RESULT_OK;
+}
+
+SYS_EVENTS_DATA GenGetEventsFunc(void)
+{
+	//опрос событий
+	return ControlsUpdateEvents(UPDEVENTS_GETEVENTS | UPDEVENTS_HANDLERS_LAUNCH);
+}
+
+uint8_t MenuInit(void)
+{
+	//создание меню и добавление 1 пункта
+	GenMenu = MenuCreate(MENU_DRAW_FPS, MENU_EVENTS_FPS, GenGetEventsFunc, MenuTransitionDraw, MENU_TRANS_TIME, Menu1Draw, Menu1Events);
+  if ( !GenMenu ) return RESULT_ERROR;
+	//добавляем пункты меню	
+	MenuAddNextItem(GenMenu, Menu2Draw, Menu2Events); 
+  MenuAddNextItem(GenMenu, Menu3Draw, Menu3Events);
+  MenuAddNextItem(GenMenu, Menu4Draw, Menu4Events);
+  MenuAddNextItem(GenMenu, Menu5Draw, Menu5Events);
+  MenuAddNextItem(GenMenu, Menu6Draw, Menu6Events);	
+  MenuAddNextItem(GenMenu, Menu7Draw, Menu7Events);
+	MenuAddSubItem(GenMenu, MenuSaveDraw, 0);
 	return RESULT_OK;
 }
 

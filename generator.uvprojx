@@ -335,7 +335,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>.\GenLibs;.\GenLibs\HD44780</IncludePath>
+              <IncludePath>.\GenLibs;.\GenLibs\HD44780;.\GenLibs\MENU</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -395,11 +395,6 @@
               <FilePath>.\GenLibs\bsc_stm32_delay.c</FilePath>
             </File>
             <File>
-              <FileName>gen_controls.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\GenLibs\gen_controls.c</FilePath>
-            </File>
-            <File>
               <FileName>gen_flash.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\GenLibs\gen_flash.c</FilePath>
@@ -420,11 +415,6 @@
               <FilePath>.\GenLibs\gen_timers.c</FilePath>
             </File>
             <File>
-              <FileName>menu_controller.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\GenLibs\menu_controller.c</FilePath>
-            </File>
-            <File>
               <FileName>hd44780display.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\GenLibs\HD44780\hd44780display.c</FilePath>
@@ -433,6 +423,26 @@
               <FileName>stm32f1xx_hd44780_driver.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\GenLibs\HD44780\stm32f1xx_hd44780_driver.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsc_tree_menu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\GenLibs\MENU\bsc_tree_menu.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsc_controls.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\GenLibs\MENU\bsc_controls.c</FilePath>
+            </File>
+            <File>
+              <FileName>gen_menu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\GenLibs\gen_menu.c</FilePath>
+            </File>
+            <File>
+              <FileName>gen_rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\GenLibs\gen_rtc.c</FilePath>
             </File>
           </Files>
         </Group>

@@ -17,6 +17,10 @@
 #define MIN_POWER_K 0.0   //минимальное значение коэффициента мощности, %
 #define MAX_POWER_K 150.0 //максимальное значение коэффициента мощности, %
 
+#define MENU_DRAW_FPS 50       //√ц, скорость отрисовки меню
+#define MENU_EVENTS_FPS 1000   //√ц, скорость опроса кнопок
+#define MENU_TRANS_TIME 630   //врем€ перехода между пунктами меню, мс
+
 #define CH2_UP GPIOA->BSRR = GPIO_BSRR_BS9
 #define CH2_DOWN GPIOA->BSRR = GPIO_BSRR_BR9
 #define CH4_UP GPIOB->BSRR = GPIO_BSRR_BS1
@@ -30,18 +34,5 @@
 #define LED_RED_OFF GPIOA->BSRR = GPIO_BSRR_BR1
 
 #define flash_base_addr 0x0801FC00
-
-enum
-{
-	EVENT_BUTTON1_CLICK = 1,
-	EVENT_BUTTON2_CLICK = 2,
-	EVENT_BUTTON3_CLICK = 4,
-	EVENT_BUTTON4_CLICK = 8,
-	EVENT_BUTTON5_CLICK = 16,
-	EVENT_BUTTON6_CLICK = 32,
-	EVENT_VALCODER_BUTTON_CLICK = 64,
-	EVENT_VALCODER_CCW = 128,
-	EVENT_VALCODER_CW  = 256		
-};
 
 #endif

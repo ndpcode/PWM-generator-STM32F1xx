@@ -17,8 +17,8 @@ uint8_t FlashWriteData(uint8_t *byte_array, uint8_t size)
 	// size - не 0, кратный 2
 	if ( size == 0 ) return 0;
 	if ( ( size % 2 ) != 0 ) return 0;
-	//не пустой указатель
-	if ( byte_array == 0 ) return 0;
+	//пустой указатель
+	if ( !byte_array ) return 0;
 	
 	//ждем
 	while( FLASH->SR & FLASH_SR_BSY );
@@ -38,11 +38,13 @@ uint8_t FlashWriteData(uint8_t *byte_array, uint8_t size)
 	//выкл режим
 	FLASH->CR &= ~FLASH_CR_PER;
 	
+	//ждем
+	while( FLASH->SR & FLASH_SR_BSY );
+	//если установлен флаг завершения операции, сброс
+	if (FLASH->SR & FLASH_SR_EOP) FLASH->SR |= FLASH_SR_EOP;
+	
 	//режим - запись во flash	
 	FLASH->CR |= FLASH_CR_PG;
-	//ждем флага и сбрасываем
-	while ( !( FLASH->SR & FLASH_SR_EOP ) );
-	FLASH->SR |= FLASH_SR_EOP;
 	
 	//запись
 	for ( i = 0; i < size; i += 2 )

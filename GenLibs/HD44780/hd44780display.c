@@ -170,7 +170,7 @@ unsigned char HD44780DisplayMoveCursor(HD44780_DISPLAY_STRUCT *displayStruct, un
 	if ( HD44780DisplayCheckConfig(displayStruct) != HD44780_DISPLAY_OK ) return HD44780_DISPLAY_CONFIG_ERROR;
 	if ( ( displayRow > 4 ) || ( !displayRow ) ) return HD44780_DISPLAY_ERROR;
 	return HD44780DisplaySendByte(displayStruct,
-                                HD44780_CMD_SETDDRAMADDR | (row_offsets[displayRow-1] + displayColumn),
+                                HD44780_CMD_SETDDRAMADDR | (row_offsets[displayRow-1] + displayColumn - 1),
 	                              HD44780_DISPLAY_COMMAND);
 }
 
