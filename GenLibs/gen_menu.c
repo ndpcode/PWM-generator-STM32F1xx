@@ -9,6 +9,7 @@
 #include "gen_flash.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 //значения дельты приращения частот при повороте ручки валкодера
 #define DeltaValMinValue 1
@@ -27,8 +28,6 @@ extern struct MainConfig
 
 char Line1Buffer[16] = "                ";
 char Line2Buffer[16] = "                ";
-char Line1BufferNew[17] = "                ";
-char Line2BufferNew[17] = "                ";
 
 //глобальные переменные для хранения промежуточных значений
 //размещаем сразу, чтобы не тратить время на выделение памяти
@@ -46,6 +45,9 @@ uint8_t num2Length;
 uint8_t cursorNumN = 1;
 uint32_t bufferVal = 0;
 double bufferValDouble = 0;
+int16_t menu7_iteration = 0;
+char Line1BufferNew[16] = "                ";
+char Line2BufferNew[16] = "                ";
 
 void _clearDisplayBuffers(void)
 {
@@ -84,6 +86,35 @@ uint32_t getDeltaNumFromCursorPos(uint8_t _cursorPos)
 		result *= 10;
 	return result;		
 }
+
+void MenuAnimSelectionDraw(char *_buffer, uint8_t length, uint8_t leftBorder, uint8_t rightBorder, uint8_t frameAll, uint8_t frameNum)
+{
+	uint8_t i = 0;
+	if ( ( leftBorder >= length ) && ( ( rightBorder + length - 1 ) < 16 ) )
+		for ( i = 0; i < length; i++ )
+	  {
+		  if ( frameNum >= ( i * ( frameAll / length ) ) )
+		  {
+			  _buffer[leftBorder - length + i] = '>';
+	      _buffer[rightBorder + length - i - 1] = '<';
+		  };
+	  };
+}
+
+void MenuTickerDraw(char *_buffer, char *tickerText, int16_t *iteration)
+{
+	uint8_t i = 0;
+	uint8_t tickerLength = strlen(tickerText);
+	if ( ( abs(*iteration) + 16 ) <= tickerLength )
+	{
+		for ( i = 0; i < 16; i++ )
+		{
+			_buffer[i] = tickerText[i + abs(*iteration)];		
+		}
+	};
+	(*iteration)++;
+  if ( ( abs(*iteration) + 16 ) > tickerLength ) *iteration = -(*iteration - 2);	
+}	
 
 void MenuTransitionDraw(const uint16_t frameNum)
 {	
@@ -365,9 +396,9 @@ uint8_t Menu3Draw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBuffer(&Line1BufferNew[0], "F Sign = ", 0);
+		_copyStringToBuffer(&Line1BufferNew[0], "F Sign = ", 1);
 		snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-		_copyStringToBuffer(&Line1BufferNew[0], displayString, 9);
+		_copyStringToBuffer(&Line1BufferNew[0], displayString, 10);
     //2 строка
 	  _copyStringToBuffer(&Line2BufferNew[0], "inc = ", 3);
 	  snprintf(displayString, 12, "%d", num2Val);
@@ -380,9 +411,9 @@ uint8_t Menu3Draw(const uint8_t frameNum)
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "F Sign = ", 0);
+	_copyStringToBuffer(&Line1Buffer[0], "F Sign = ", 1);
 	snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-	_copyStringToBuffer(&Line1Buffer[0], displayString, 9);	
+	_copyStringToBuffer(&Line1Buffer[0], displayString, 10);	
 	//2 строка
 	_copyStringToBuffer(&Line2Buffer[0], "inc = ", 3);
 	snprintf(displayString, 12, "%d", num2Val);
@@ -395,7 +426,7 @@ uint8_t Menu3Draw(const uint8_t frameNum)
 	switch ( cursorNumN )
 	{
 		case 1:
-			HD44780DisplayMoveCursor(&Display, 1, 10 + num1Length - num1CursorPos);
+			HD44780DisplayMoveCursor(&Display, 1, 11 + num1Length - num1CursorPos);
 		break;
 		case 2:
 			HD44780DisplayMoveCursor(&Display, 2, 10 + num2Length - num2CursorPos);
@@ -692,10 +723,13 @@ uint8_t Menu5Draw(const uint8_t frameNum)
 	{
 		case 1:
 			_copyStringToBuffer(&Line2Buffer[0], "Sinus", 5);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 10, GenMenu->MenuTargetDrawFPS, frameNum); 
+		  Line2Buffer[15] = '<';
 		break;
 		
 		case 2:
 			_copyStringToBuffer(&Line2Buffer[0], "Triangle", 4);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 12, GenMenu->MenuTargetDrawFPS, frameNum);
 		break;
 	};
 	
@@ -780,9 +814,11 @@ uint8_t Menu6Draw(const uint8_t frameNum)
 	if ( GenConfig.isImmediateUpdate )
 	{
 		_copyStringToBuffer(&Line2Buffer[0], "Auto", 6);
+		MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 10, GenMenu->MenuTargetDrawFPS, frameNum);
 	} else
 	{
 		_copyStringToBuffer(&Line2Buffer[0], "Manually", 4);
+		MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 12, GenMenu->MenuTargetDrawFPS, frameNum);
 	};
 	
 	//выводим на дисплей
@@ -807,6 +843,7 @@ uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
 		menuTransDirection = 2; //влево(+)
+		menu7_iteration = 0;
 		
 		Menu7Draw(0);
 		MenuGoToNextItem(GenMenu);
@@ -843,11 +880,14 @@ uint8_t Menu7Draw(const uint8_t frameNum)
 	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
 	//очистка
-	_clearDisplayBuffers();
+	//_clearDisplayBuffers(); без очистки
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "Save config?", 2);	
+	_copyStringToBuffer(&Line1Buffer[0], "  Save config?  ", 0);	
 	//2 строка
-  _copyStringToBuffer(&Line2Buffer[0], "Press valc button for save", 0);
+	if ( !( frameNum % 25 ) )
+	{
+		MenuTickerDraw(&Line2Buffer[0], "Press valcoder button for save", &menu7_iteration);
+	};
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
