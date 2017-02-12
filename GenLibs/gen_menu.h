@@ -6,6 +6,8 @@
 #include "bsc_controls.h"
 
 void MenuTransitionDraw(const uint16_t frameNum);
+//Menu0 - HI
+uint8_t MenuHiDraw(const uint8_t frameNum);
 //Menu1 - MAIN menu
 uint8_t Menu1Draw(const uint8_t frameNum);
 uint8_t Menu1Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);

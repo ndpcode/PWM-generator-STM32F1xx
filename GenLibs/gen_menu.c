@@ -102,8 +102,8 @@ void MenuAnimSelectionDraw(char *_buffer, uint8_t length, uint8_t leftBorder, ui
 	  {
 		  if ( frameNum >= ( i * ( frameAll / length ) ) )
 		  {
-			  _buffer[leftBorder - length + i] = '>';
-	      _buffer[rightBorder + length - i - 1] = '<';
+			  _buffer[leftBorder - length + i] = 0xC9;
+	      _buffer[rightBorder + length - i - 1] = 0xC8;
 		  };
 	  };
 }
@@ -169,6 +169,30 @@ void MenuTransitionDraw(const uint16_t frameNum)
 	
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
 	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+}
+
+uint8_t MenuHiDraw(const uint8_t frameNum)
+{
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBuffer(&Line1Buffer[0], "Hi!", 6);	
+	//2 строка
+	_copyStringToBuffer(&Line2Buffer[0], "****************", 0);
+	
+	//выходим после 1с
+	if ( frameNum >= GenMenu->MenuTargetDrawFPS )
+	{
+		menuTransDirection = 2; //влево(+)
+
+		Menu1Draw(0);
+		MenuGoToNextItem(GenMenu);
+	};
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	return RESULT_OK;
 }
 
 uint8_t Menu1Draw(const uint8_t frameNum)
@@ -731,7 +755,7 @@ uint8_t Menu5Draw(const uint8_t frameNum)
 		case 1:
 			_copyStringToBuffer(&Line2Buffer[0], "Sinus", 5);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 10, GenMenu->MenuTargetDrawFPS, frameNum); 
-		  Line2Buffer[15] = '<';
+		  Line2Buffer[15] = 0xC8;
 		break;
 		
 		case 2:

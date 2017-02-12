@@ -166,9 +166,10 @@ SYS_EVENTS_DATA GenGetEventsFunc(void)
 uint8_t MenuInit(void)
 {
 	//создание меню и добавление 1 пункта
-	GenMenu = MenuCreate(MENU_DRAW_FPS, MENU_EVENTS_FPS, GenGetEventsFunc, MenuTransitionDraw, MENU_TRANS_TIME, Menu1Draw, Menu1Events);
+	GenMenu = MenuCreate(MENU_DRAW_FPS, MENU_EVENTS_FPS, GenGetEventsFunc, MenuTransitionDraw, MENU_TRANS_TIME, MenuHiDraw, 0);
   if ( !GenMenu ) return RESULT_ERROR;
 	//добавляем пункты меню	
+	MenuAddNextItem(GenMenu, Menu1Draw, Menu1Events);
 	MenuAddNextItem(GenMenu, Menu2Draw, Menu2Events); 
   MenuAddNextItem(GenMenu, Menu3Draw, Menu3Events);
   MenuAddNextItem(GenMenu, Menu4Draw, Menu4Events);
