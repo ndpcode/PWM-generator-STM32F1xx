@@ -82,6 +82,25 @@ void calculateSinArray( uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_
 	//_sin_array[_arr_size-1] = 0;
 }
 
+void calculateTriangleArray( uint16_t *_tri_array, uint16_t _arr_size, uint16_t _acc_tri, double _power_k )
+{
+	uint16_t i = 0;
+	uint16_t transistorsMinStep = transistorsMinTime * cpuFreq;	
+	uint16_t transistorsMaxStep = _acc_tri - transistorsDeadTime * cpuFreq;
+	double _b = (double)_acc_tri / ( ( _arr_size / 2 ) - 1 );
+	for (i = 0; i < _arr_size/2; i++){
+		_tri_array[i] = (double)_b * i * _power_k;
+		_tri_array[_arr_size - i - 1] = _tri_array[i];
+		//контроль на минимальный DutyCicle
+		if ( _tri_array[i] < transistorsMinStep ) _tri_array[i] = 0;
+		//контроль для DeadTime отдельно, для прозрачности
+		if ( _tri_array[i] > transistorsMaxStep ) _tri_array[i] = transistorsMaxStep;
+	};
+	//крайние значения принудительно к 0
+	//_sin_array[0] = 0;
+	//_sin_array[_arr_size-1] = 0;
+}
+
 void calculateDataArray(uint16_t *_signal_array, uint16_t _arr_size,
                         uint16_t _acc_signal, double _power_k, uint8_t _signal_type)
 {
@@ -92,7 +111,7 @@ void calculateDataArray(uint16_t *_signal_array, uint16_t _arr_size,
 		break;
 		
 		case 2: //triangle
-			calculateSinArray(_signal_array, _arr_size, _acc_signal, _power_k);
+			calculateTriangleArray(_signal_array, _arr_size, _acc_signal, _power_k);
 		break;
 	}		
 };
@@ -114,12 +133,12 @@ uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k,
 	{
 		accuracySignalB = cpuFreq / ( _freq_pwm );
 		pwmSignalStepsB = _freq_pwm / ( 2*_freq_signal );
-		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k, _signal_type);
+		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k/100, _signal_type);
 	} else
 	{ //теущий буфер - B
 		accuracySignalA = cpuFreq / ( _freq_pwm );
 		pwmSignalStepsA = _freq_pwm / ( 2*_freq_signal );
-		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k, _signal_type);
+		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k/100, _signal_type);
 	};				
 	//подготовка флагов к плавному переключению сигнала
 	//по прерыванию DMA будет изменен буффер сигнала

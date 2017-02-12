@@ -49,6 +49,13 @@ int16_t menu7_iteration = 0;
 char Line1BufferNew[16] = "                ";
 char Line2BufferNew[16] = "                ";
 
+void LedUpdate(void)
+{
+	//светодиоды для индикации
+	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
+	if ( GenConfig.signalType == 2 ) LED_GREEN_ON; else LED_GREEN_OFF;
+}
+
 void _clearDisplayBuffers(void)
 {
 	uint8_t i;
@@ -773,6 +780,7 @@ uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		if ( !--GenConfig.signalType ) GenConfig.signalType = 1;
 		if ( GenConfig.isImmediateUpdate )
 			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+		LedUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -781,6 +789,7 @@ uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		if ( ++GenConfig.signalType > 2 ) GenConfig.signalType = 2;
 		if ( GenConfig.isImmediateUpdate )
 			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+	  LedUpdate();
 	};
 	
 	return RESULT_OK;
@@ -853,6 +862,7 @@ uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	if ( genEvents & EVENT_VALCODER_CCW )
 	{
 		GenConfig.isImmediateUpdate = 0;
+    LedUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -860,6 +870,7 @@ uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	{
 		GenConfig.isImmediateUpdate = 1;
 		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+		LedUpdate();
 	};
 	
 	return RESULT_OK;
@@ -886,7 +897,7 @@ uint8_t Menu7Draw(const uint8_t frameNum)
 	//2 строка
 	if ( !( frameNum % 25 ) )
 	{
-		MenuTickerDraw(&Line2Buffer[0], "Press valcoder button for save", &menu7_iteration);
+		MenuTickerDraw(&Line2Buffer[0], " Press valcoder button for save ", &menu7_iteration);
 	};
 	
 	//выводим на дисплей

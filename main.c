@@ -88,6 +88,10 @@ int main(void)
 	//запуск ШИМ
 	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
 	
+	//светодиоды для индикации
+	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
+	if ( GenConfig.signalType == 2 ) LED_GREEN_ON; else LED_GREEN_OFF;
+	
 	while(1)
 	{
 		//обновление меню и элементов управления
@@ -177,6 +181,6 @@ uint8_t MenuInit(void)
 
 void HardFault_Handler(void)
 {
-	ErrorHandler(RESULT_IO_ERROR);
+	ErrorHandler(RESULT_FATAL_ERROR);
 }
 
