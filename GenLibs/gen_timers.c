@@ -65,59 +65,107 @@ uint8_t GenInitTimers(void)
   return 1;
 }
 
-void calculateSinArray( uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_sin, double _power_k )
+void calculateSinArray(uint16_t *_sin_array, uint16_t _arr_size, uint16_t _acc_sin,
+	                     double _power_k, double _center_k, uint32_t _transistorsMinTimeNS, uint32_t _transistorsDeadTimeNS)
 {
-	uint16_t i = 0;
-	uint16_t transistorsMinStep = transistorsMinTime * cpuFreq;	
-	uint16_t transistorsMaxStep = _acc_sin - transistorsDeadTime * cpuFreq;
-	for (i = 0; i < _arr_size; i++){
-		_sin_array[i] = (double)sin( (i+1)*pi / _arr_size )*_acc_sin*_power_k;
+	uint16_t i = 0, j = 0;
+	double sin_element = 0;
+	double _center_mult = 0;
+	double vector = 0;
+	//min time - from NS - to cicles
+	uint16_t transistorsMinStep = (uint32_t)_transistorsMinTimeNS * cpuFreq / 1000000000;	
+	//dead time - from NS - to cicles
+	uint16_t transistorsMaxStep = _acc_sin - (uint32_t)_transistorsDeadTimeNS * cpuFreq / 1000000000;	
+	//k of pulse center - from +/- XXXX.XX - to 0.XXXXXX ... X.XXXXX
+	_center_mult = ( _center_k >= 0 ) ? ( (_center_k + 100) / 100 ) : ( 100 / fabs(_center_k - 100) );
+	// 1/2 up
+	while ( ( vector >= 0 ) && ( i < _arr_size ) )
+	{
+		sin_element = (double)sin( i * pi * _center_mult / _arr_size ) * _acc_sin * _power_k;
+		vector = sin_element - vector;
+		_sin_array[i] = sin_element;
 		//контроль на минимальный DutyCicle
 		if ( _sin_array[i] < transistorsMinStep ) _sin_array[i] = 0;
 		//контроль для DeadTime отдельно, для прозрачности
-		if ( _sin_array[i] > transistorsMaxStep ) _sin_array[i] = transistorsMaxStep;
-	};
-	//крайние значения принудительно к 0
-	//_sin_array[0] = 0;
-	//_sin_array[_arr_size-1] = 0;
+		if ( _sin_array[i] > transistorsMaxStep ) _sin_array[i] = transistorsMaxStep;	
+    i++;		
+	}
+	// 1/2 down
+	if ( i < _arr_size )
+	{
+		if ( i > 0 ) i--;
+		j = i;
+		vector = pi / ( 2 * ( _arr_size - j ) );
+		while ( i < _arr_size )
+		{
+			sin_element = (double)sin( pi / 2 + (i - j + 1) * vector ) * _acc_sin * _power_k;
+		  _sin_array[i] = sin_element;
+		  //контроль на минимальный DutyCicle
+		  if ( _sin_array[i] < transistorsMinStep ) _sin_array[i] = 0;
+		  //контроль для DeadTime отдельно, для прозрачности
+		  if ( _sin_array[i] > transistorsMaxStep ) _sin_array[i] = transistorsMaxStep;	
+      i++;
+		}
+	}
 }
 
-void calculateTriangleArray( uint16_t *_tri_array, uint16_t _arr_size, uint16_t _acc_tri, double _power_k )
+void calculateTriangleArray(uint16_t *_tri_array, uint16_t _arr_size, uint16_t _acc_tri,
+		                        double _power_k, double _center_k, uint32_t _transistorsMinTimeNS, uint32_t _transistorsDeadTimeNS)
 {
 	uint16_t i = 0;
-	uint16_t transistorsMinStep = transistorsMinTime * cpuFreq;	
-	uint16_t transistorsMaxStep = _acc_tri - transistorsDeadTime * cpuFreq;
-	double _b = (double)_acc_tri / ( ( _arr_size / 2 ) - 1 );
-	for (i = 0; i < _arr_size/2; i++){
+	double _center_mult = 0;
+	double _a, _b = 0;
+	//min time - from NS - to cicles
+	uint16_t transistorsMinStep = (uint32_t)_transistorsMinTimeNS * cpuFreq / 1000000000;	
+	//dead time - from NS - to cicles
+	uint16_t transistorsMaxStep = _acc_tri - (uint32_t)_transistorsDeadTimeNS * cpuFreq / 1000000000;	
+	//k of pulse center - from +/- XXXX.XX - to 0.0 ... 2.0
+	_center_mult = ( _center_k >= 0 ) ? ( _center_k / 1000 + 1 ) : ( 1 - fabs(_center_k) / 1000 );
+	if ( _center_mult < 0 ) _center_mult = 0;
+	if ( _center_mult > 2 ) _center_mult = 2;
+	//1/2 up
+	//coeff
+	_a = _arr_size * _center_mult / 2;
+	if ( ( _a == 0 ) || ( (_arr_size - _a - 1) == 0 ) ) return;
+	_b = (double)_acc_tri / _a;	
+	for (i = 0; i < _a + 1; i++){
 		_tri_array[i] = (double)_b * i * _power_k;
-		_tri_array[_arr_size - i - 1] = _tri_array[i];
 		//контроль на минимальный DutyCicle
 		if ( _tri_array[i] < transistorsMinStep ) _tri_array[i] = 0;
 		//контроль для DeadTime отдельно, для прозрачности
 		if ( _tri_array[i] > transistorsMaxStep ) _tri_array[i] = transistorsMaxStep;
 	};
-	//крайние значения принудительно к 0
-	//_sin_array[0] = 0;
-	//_sin_array[_arr_size-1] = 0;
+	//1/2 down
+	//coeff
+	_b = (double)_acc_tri / (_arr_size - _a - 1);
+	for (i = _a + 1; i < _arr_size; i++){
+		_tri_array[i] = (double)( _acc_tri - _b * (i - _a) ) * _power_k;
+		//контроль на минимальный DutyCicle
+		if ( _tri_array[i] < transistorsMinStep ) _tri_array[i] = 0;
+		//контроль для DeadTime отдельно, для прозрачности
+		if ( _tri_array[i] > transistorsMaxStep ) _tri_array[i] = transistorsMaxStep;
+	};
 }
 
-void calculateDataArray(uint16_t *_signal_array, uint16_t _arr_size,
-                        uint16_t _acc_signal, double _power_k, uint8_t _signal_type)
+void calculateDataArray(uint16_t *_signal_array, uint16_t _arr_size, uint16_t _acc_signal,
+	                      double _power_k, double _center_k, uint32_t _transistorsMinTimeNS,
+                        uint32_t _transistorsDeadTimeNS, uint8_t _signal_type)
 {
   switch ( _signal_type )
 	{
 		case 1: //sinus
-			calculateSinArray(_signal_array, _arr_size, _acc_signal, _power_k);
+			calculateSinArray(_signal_array, _arr_size, _acc_signal, _power_k, _center_k, _transistorsMinTimeNS, _transistorsDeadTimeNS);
 		break;
 		
 		case 2: //triangle
-			calculateTriangleArray(_signal_array, _arr_size, _acc_signal, _power_k);
+			calculateTriangleArray(_signal_array, _arr_size, _acc_signal, _power_k, _center_k, _transistorsMinTimeNS, _transistorsDeadTimeNS);
 		break;
 	}		
 };
 
 //________________startSignal____________________
-uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, uint8_t _signal_type)
+uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, double _center_k,
+                     uint32_t _transistorsMinTimeNS, uint32_t _transistorsDeadTimeNS, uint8_t _signal_type)
 {
 	//проверка частот
 	if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
@@ -133,12 +181,14 @@ uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k,
 	{
 		accuracySignalB = cpuFreq / ( _freq_pwm );
 		pwmSignalStepsB = _freq_pwm / ( 2*_freq_signal );
-		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k/100, _signal_type);
+		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k/100, _center_k,
+		                   _transistorsMinTimeNS, _transistorsDeadTimeNS, _signal_type);
 	} else
 	{ //теущий буфер - B
 		accuracySignalA = cpuFreq / ( _freq_pwm );
 		pwmSignalStepsA = _freq_pwm / ( 2*_freq_signal );
-		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k/100, _signal_type);
+		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k/100, _center_k,
+		                   _transistorsMinTimeNS, _transistorsDeadTimeNS, _signal_type);
 	};				
 	//подготовка флагов к плавному переключению сигнала
 	//по прерыванию DMA будет изменен буффер сигнала
@@ -153,11 +203,11 @@ uint8_t FrequencyCheck(uint32_t _freq_pwm, uint32_t _freq_signal)
 	//проверка на переполнение uint16_t
 	if ( ( (uint32_t)cpuFreq / _freq_pwm ) > ( USHRT_MAX - 1 ) ) return 0;
 	//проверка на минимум "разрешения"(точности) сигнала
-	if ( ( (uint32_t)cpuFreq / _freq_pwm ) < 10 ) return 0;
+	if ( ( (uint32_t)cpuFreq / _freq_pwm ) < 2 ) return 0;
 	//проверка на переполнение массива
 	if ( ( _freq_pwm / ( 2*_freq_signal ) ) > maxSinSteps ) return 0;
 	//проверка на минимум значений в массиве
-	if ( ( _freq_pwm / ( 2*_freq_signal ) ) < 10 ) return 0;
+	if ( ( _freq_pwm / ( 2*_freq_signal ) ) < 3 ) return 0;
 	//иначе возвращаем 1
 	return 1;
 }

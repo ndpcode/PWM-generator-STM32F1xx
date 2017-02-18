@@ -20,6 +20,8 @@
 HD44780_DISPLAY_STRUCT Display;
 TREE_MENU *GenMenu;
 
+uint16_t MenuOKItemID;
+
 //структура основных параметров, размер 24(32) байт, кратный 2 дл€ упрощени€ сохранени€ на flash
 struct MainConfig
 {
@@ -27,6 +29,9 @@ struct MainConfig
 	uint32_t freqPWM;
 	uint32_t freqSignal;
 	double powerK;
+	double centerK;
+	uint32_t pwmMinPulseLengthInNS;
+	uint32_t pwmDeadTimeInNS;
 	uint8_t signalType;
 } GenConfig;
 
@@ -83,10 +88,9 @@ int main(void)
 	//создание меню
 	if ( MenuInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
-	//ErrorHandler(RESULT_FATAL_ERROR);
-	
 	//запуск Ў»ћ
-	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.centerK,
+               GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 	
 	//светодиоды дл€ индикации
 	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
@@ -110,11 +114,14 @@ uint8_t InitDefaults(void)
 	if ( GenConfig.freqPWM == 0xFFFFFFFF )
 	{
 		//данные по-умолчанию
-		GenConfig.freqPWM = 20000;
-		GenConfig.freqSignal = 100;
-		GenConfig.powerK = 100.0;
-		GenConfig.signalType = 1;
-		GenConfig.isImmediateUpdate = 0;
+		GenConfig.isImmediateUpdate = defaultUpdateType;
+		GenConfig.freqPWM= defaultFreqPWM;
+		GenConfig.freqSignal = defaultFreqSignal;
+		GenConfig.powerK = defaultPowerK;
+		GenConfig.centerK = defaultSignalCenter;
+		GenConfig.pwmMinPulseLengthInNS = defaultTransistorsMinTime;
+		GenConfig.pwmDeadTimeInNS = defaultTransistorsDeadTime;
+		GenConfig.signalType = defaultSignalType;
 	};	
 	return RESULT_OK;
 }
@@ -177,6 +184,7 @@ uint8_t MenuInit(void)
   MenuAddNextItem(GenMenu, Menu6Draw, Menu6Events);	
   MenuAddNextItem(GenMenu, Menu7Draw, Menu7Events);
 	MenuAddSubItem(GenMenu, MenuSaveDraw, 0);
+	MenuOKItemID = MenuAddNextItem(GenMenu, MenuOKDraw, 0);	
 	return RESULT_OK;
 }
 

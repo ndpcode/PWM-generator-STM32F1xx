@@ -31,5 +31,7 @@ uint8_t Menu7Draw(const uint8_t frameNum);
 uint8_t Menu7Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
 //Manu save config
 uint8_t MenuSaveDraw(const uint8_t frameNum); 
+//Menu OK
+uint8_t MenuOKDraw(const uint8_t frameNum);
 
 #endif

@@ -17,6 +17,7 @@
 
 extern HD44780_DISPLAY_STRUCT Display;
 extern TREE_MENU *GenMenu;
+extern uint16_t MenuOKItemID;
 extern struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
@@ -48,12 +49,42 @@ double bufferValDouble = 0;
 int16_t menu7_iteration = 0;
 char Line1BufferNew[16] = "                ";
 char Line2BufferNew[16] = "                ";
+uint16_t LastMenuItemID = 0;
 
 void LedUpdate(void)
 {
 	//светодиоды для индикации
 	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
 	if ( GenConfig.signalType == 2 ) LED_GREEN_ON; else LED_GREEN_OFF;
+}
+
+void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
+{
+	if ( genEvents & EVENT_BUTTON1_CLICK )
+	{
+		//read from flash
+		memset(&GenConfig, 0, sizeof(GenConfig));
+		FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
+		//проверка наличия сохраненных данных
+		if ( GenConfig.freqPWM == 0xFFFFFFFF )
+		{
+			//данные по-умолчанию
+		  GenConfig.freqPWM = 20000;
+		  GenConfig.freqSignal = 100;
+		  GenConfig.powerK = 100.0;
+		  GenConfig.signalType = 1;
+		  GenConfig.isImmediateUpdate = 0;
+	  };
+	}
+	
+	if ( genEvents & EVENT_BUTTON2_CLICK )
+	{
+		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+		
+		LastMenuItemID = GenMenu->MenuCurrentItem->MenuItemId;
+		GenMenu->MenuTransitionTimeInMS = 0;
+		MenuGoToItemId(GenMenu, MenuOKItemID);
+	}	
 }
 
 void _clearDisplayBuffers(void)
@@ -240,6 +271,8 @@ uint8_t Menu1Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		Menu2Draw(0);
 		MenuGoToNextItem(GenMenu);
   };
+	
+	Buttons_1_2_scan(genEvents);
 	return RESULT_OK;
 }
 
@@ -417,6 +450,8 @@ uint8_t Menu2Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		cursorNumN++;
 		if ( cursorNumN > 2 ) cursorNumN = 2;
 	};
+	
+	Buttons_1_2_scan(genEvents);
 	
 	return RESULT_OK;
 }
@@ -603,6 +638,8 @@ uint8_t Menu3Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		if ( cursorNumN > 2 ) cursorNumN = 2;
 	};
 	
+	Buttons_1_2_scan(genEvents);
+	
 	return RESULT_OK;
 }
 
@@ -719,6 +756,8 @@ uint8_t Menu4Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		};
 	};
 	
+	Buttons_1_2_scan(genEvents);
+	
 	return RESULT_OK;
 }
 
@@ -816,6 +855,8 @@ uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	  LedUpdate();
 	};
 	
+	Buttons_1_2_scan(genEvents);
+	
 	return RESULT_OK;
 }
 
@@ -897,6 +938,8 @@ uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		LedUpdate();
 	};
 	
+	Buttons_1_2_scan(genEvents);
+	
 	return RESULT_OK;
 }
 
@@ -952,6 +995,8 @@ uint8_t Menu7Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		MenuGoToChildItem(GenMenu);		
 	};
 	
+	Buttons_1_2_scan(genEvents);
+	
 	return RESULT_OK;
 }
 
@@ -997,6 +1042,33 @@ uint8_t MenuSaveDraw(const uint8_t frameNum)
 		Menu7Draw(0);
 		MenuGoToParentItem(GenMenu);
 	};	
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	return RESULT_OK;
+}
+
+uint8_t MenuOKDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+	  //1 строка
+	  _copyStringToBuffer(&Line1BufferNew[0], "OK", 7);
+		return RESULT_OK;
+	};
+	
+	if ( frameNum > GenMenu->MenuTargetDrawFPS / 2 )
+	{
+		MenuGoToItemId(GenMenu, LastMenuItemID);
+		GenMenu->MenuTransitionTimeInMS = MENU_TRANS_TIME;
+	};
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBuffer(&Line1Buffer[0], "OK", 7);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);

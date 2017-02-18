@@ -145,7 +145,7 @@ uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uin
 	//снимаем блокировку
 	menuHead->MenuEditAllow = 1;
 	
-	return 1;
+	return newMenuItem->MenuItemId;
 }
 
 uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint8_t),
@@ -181,7 +181,7 @@ uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint
 	//снимаем блокировку
 	menuHead->MenuEditAllow = 1;
 	
-	return 1;
+	return newMenuItem->MenuItemId;
 }
 
 uint8_t MenuGoToHeadItem(TREE_MENU *menuHead)
@@ -249,10 +249,6 @@ uint8_t MenuGoToItemId(TREE_MENU *menuHead, uint16_t MeniItemId)
 	if ( !menuSwitchCurrentItemTo(menuHead, getMenuItemById(menuHead->MenuHeadItem, MeniItemId)) ) return 0;
 	return 1;
 }
-
-uint32_t trans_buf[50][3] = { 0,0,0,0,0,0};
-uint32_t broken_data[10][3] = { 0,0,0 };
-uint8_t broken_index = 0;
 
 uint8_t MenuUpdate(TREE_MENU *menuHead, uint16_t ClockSecond, uint16_t ClockMillisecond)
 {
