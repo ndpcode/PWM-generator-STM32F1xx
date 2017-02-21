@@ -26,12 +26,12 @@ uint16_t MenuOKItemID;
 struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
-	uint32_t freqPWM;
-	uint32_t freqSignal;
-	double powerK;
-	double centerK;
-	uint32_t pwmMinPulseLengthInNS;
-	uint32_t pwmDeadTimeInNS;
+	int32_t freqPWM;
+	int32_t freqSignal;
+	int32_t powerK;
+	int32_t centerK;
+	int32_t pwmMinPulseLengthInNS;
+	int32_t pwmDeadTimeInNS;
 	uint8_t signalType;
 } GenConfig;
 
@@ -172,19 +172,39 @@ SYS_EVENTS_DATA GenGetEventsFunc(void)
 
 uint8_t MenuInit(void)
 {
+	uint16_t varIndex = 0;
 	//создание меню и добавление 1 пункта
 	GenMenu = MenuCreate(MENU_DRAW_FPS, MENU_EVENTS_FPS, GenGetEventsFunc, MenuTransitionDraw, MENU_TRANS_TIME, MenuHiDraw, 0);
   if ( !GenMenu ) return RESULT_ERROR;
-	//добавляем пункты меню	
-	MenuAddNextItem(GenMenu, Menu1Draw, Menu1Events);
-	MenuAddNextItem(GenMenu, Menu2Draw, Menu2Events); 
-  MenuAddNextItem(GenMenu, Menu3Draw, Menu3Events);
-  MenuAddNextItem(GenMenu, Menu4Draw, Menu4Events);
-  MenuAddNextItem(GenMenu, Menu5Draw, Menu5Events);
-  MenuAddNextItem(GenMenu, Menu6Draw, Menu6Events);	
-  MenuAddNextItem(GenMenu, Menu7Draw, Menu7Events);
-	MenuAddSubItem(GenMenu, MenuSaveDraw, 0);
-	MenuOKItemID = MenuAddNextItem(GenMenu, MenuOKDraw, 0);	
+	//добавляем пункты меню
+	//основное меню 1
+	MenuAddNextItem(GenMenu, 0, Menu1_StartMenuDraw, Menu1_StartMenuEvents);
+	//основное меню 2
+	varIndex = MenuAddNextItem(GenMenu, 0, Menu2_MainMenuDraw, Menu2_MainMenuEvents);
+	    //подменю 1 к меню 2
+      MenuAddSubItem(GenMenu, varIndex, Menu2_SubMenu1_ChangePWMFreqDraw, Menu2_SubMenu1_ChangePWMFreqEvents);
+	    //подменю 2 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu2_ChangeSignalFreqDraw, Menu2_SubMenu2_ChangeSignalFreqEvents);
+	    //подменю 3 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu3_ChangeSignalPowerDraw, Menu2_SubMenu3_ChangeSignalPowerEvents);
+	    //подменю 4 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu4_ChangeSignalCenterDraw, Menu2_SubMenu4_ChangeSignalCenterEvents);
+	//возврат к основному меню и добавление основного меню 3
+	varIndex = MenuAddNextItem(GenMenu, varIndex, Menu3_ExtraMenuDraw, Menu3_ExtraMenuEvents);
+	    //подменю 1 к меню 3
+      MenuAddSubItem(GenMenu, varIndex, Menu3_SubMenu1_ChangeDeadTimeDraw, Menu3_SubMenu1_ChangeDeadTimeEvents);	
+	    //подменю 2 к меню 3
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu2_ChangeMinPulseTimeDraw, Menu3_SubMenu2_ChangeMinPulseTimeEvents);
+	    //подменю 3 к меню 3
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu3_ChangeSignalTypeDraw, Menu3_SubMenu3_ChangeSignalTypeEvents);
+	    //подменю 4 к меню 3
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu4_ChangeUpdateTypeDraw, Menu3_SubMenu4_ChangeUpdateTypeEvents);			
+	//возврат к основному меню и добавление основного меню 4
+	varIndex = MenuAddNextItem(GenMenu, varIndex, Menu4_SaveMenuDraw, Menu4_SaveMenuEvents);
+	    //подменю 1 к меню 4
+			MenuAddSubItem(GenMenu, varIndex, Menu4_SubMenu1_SaveDialogDraw, 0);
+	//добавляем меню OK
+	MenuOKItemID = MenuAddNextItem(GenMenu, varIndex, MenuOKDraw, 0);
 	return RESULT_OK;
 }
 

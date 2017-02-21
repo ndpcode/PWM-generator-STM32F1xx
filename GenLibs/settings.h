@@ -15,17 +15,23 @@
 #define defaultUpdateType 0           //по-умолчанию автообновление выкл
 #define defaultFreqPWM 25000          //по-умолчанию частота ШИМ
 #define defaultFreqSignal 100         //по-умолчанию частота сигнала
-#define defaultPowerK 100.00          //по-умолчанию к-т мощности
-#define defaultSignalCenter 0.00      //по-умолчанию к-т смещения центра сигнала
+#define defaultPowerK 10000           //по-умолчанию к-т мощности, div 100
+#define defaultSignalCenter 0         //по-умолчанию к-т смещения центра сигнала, div 100
 #define defaultTransistorsMinTime  50 //по-умолчанию минимальное время открытого транзистора, нс
 #define defaultTransistorsDeadTime 50 //по-умолчанию deadTime для транзисторов, нс
 #define defaultSignalType 1           //по-умолчанию тип сигнала, синус = 1, треугольник = 2
 
-#define MIN_POWER_K 0000.0 //минимальное значение коэффициента мощности, %
-#define MAX_POWER_K 1700.0 //максимальное значение коэффициента мощности, %
+#define MIN_POWER_K 000000 //минимальное значение коэффициента мощности, %, div 100
+#define MAX_POWER_K 170000 //максимальное значение коэффициента мощности, %, div 100
 
-#define MIN_CENTER_K -1000.00 //минимальное значение к-та смещения центра
-#define MAX_CENTER_K 1000.00  //максимальное значение к-та смещения центра
+#define MIN_CENTER_K -100000 //минимальное значение к-та смещения центра, div 100
+#define MAX_CENTER_K 100000  //максимальное значение к-та смещения центра, div 100
+
+#define MIN_DEAD_TIME 0     //минимальный dead time, нс
+#define MAX_DEAD_TIME 10000 //максимальный dead time, нс
+
+#define MIN_PULSE_TIME 10     //минимальный min duty time, нс
+#define MAX_PULSE_TIME 1000   //максимальный min duty time, нс
 
 #define MENU_DRAW_FPS 50       //Гц, скорость отрисовки меню
 #define MENU_EVENTS_FPS 1000   //Гц, скорость опроса кнопок

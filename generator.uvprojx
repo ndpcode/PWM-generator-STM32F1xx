@@ -444,6 +444,11 @@
               <FileType>1</FileType>
               <FilePath>.\GenLibs\gen_rtc.c</FilePath>
             </File>
+            <File>
+              <FileName>bsc_anim_ctrls.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\GenLibs\MENU\bsc_anim_ctrls.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

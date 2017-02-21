@@ -7,6 +7,7 @@
 #include "bsc_tree_menu.h"
 #include "bsc_stm32_delay.h"
 #include "gen_flash.h"
+#include "bsc_anim_ctrls.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,35 +22,47 @@ extern uint16_t MenuOKItemID;
 extern struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
-	uint32_t freqPWM;
-	uint32_t freqSignal;
-	double powerK;
+	int32_t freqPWM;
+	int32_t freqSignal;
+	int32_t powerK;
+	int32_t centerK;
+	int32_t pwmMinPulseLengthInNS;
+	int32_t pwmDeadTimeInNS;
 	uint8_t signalType;
 } GenConfig;
 
 char Line1Buffer[16] = "                ";
 char Line2Buffer[16] = "                ";
 
+ANIM_VAR_NUMBER *valMain;
+ANIM_VAR_NUMBER *valIncSize;
+int32_t incSize;
+
 //глобальные переменные для хранения промежуточных значений
 //размещаем сразу, чтобы не тратить время на выделение памяти
-//буфер для операции со строками
-char displayString[12];
+//указатель на изменяемое число (на 1 строке или на 2)
+uint8_t cursorNumN;
+char displayString[16];
 //направление перехода меню влево(+) - 2, вправо(-) - 1
 uint8_t menuTransDirection = 0;
-//num1 - изменяемая переменная 1 (на 1 строке)
-//num2 - изменяемая переменная 2 (на 2 строке)
-uint8_t num1CursorPos = 1;
-uint8_t num1Length;
-uint32_t num2Val = 1;
-uint8_t num2CursorPos = 1;
-uint8_t num2Length;
-uint8_t cursorNumN = 1;
-uint32_t bufferVal = 0;
+int32_t bufferVal = 0;
+int32_t bufferVarK = 0;
 double bufferValDouble = 0;
-int16_t menu7_iteration = 0;
+int16_t menu_iteration = 0;
 char Line1BufferNew[16] = "                ";
 char Line2BufferNew[16] = "                ";
 uint16_t LastMenuItemID = 0;
+
+void FreeDataWhenTransition(void)
+{
+	DestroyAnimVarNumber(&valMain);
+	DestroyAnimVarNumber(&valIncSize);
+	incSize = 1;
+	cursorNumN = 1;
+	bufferVal = 0;
+	bufferVarK = 0;
+	menu_iteration = 0;
+}
 
 void LedUpdate(void)
 {
@@ -65,21 +78,25 @@ void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
 		//read from flash
 		memset(&GenConfig, 0, sizeof(GenConfig));
 		FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
-		//проверка наличия сохраненных данных
-		if ( GenConfig.freqPWM == 0xFFFFFFFF )
-		{
+	  //проверка наличия сохраненных данных
+	  if ( GenConfig.freqPWM == 0xFFFFFFFF )
+	  {
 			//данные по-умолчанию
-		  GenConfig.freqPWM = 20000;
-		  GenConfig.freqSignal = 100;
-		  GenConfig.powerK = 100.0;
-		  GenConfig.signalType = 1;
-		  GenConfig.isImmediateUpdate = 0;
+		  GenConfig.isImmediateUpdate = defaultUpdateType;
+		  GenConfig.freqPWM= defaultFreqPWM;
+		  GenConfig.freqSignal = defaultFreqSignal;
+		  GenConfig.powerK = defaultPowerK;
+		  GenConfig.centerK = defaultSignalCenter;
+		  GenConfig.pwmMinPulseLengthInNS = defaultTransistorsMinTime;
+		  GenConfig.pwmDeadTimeInNS = defaultTransistorsDeadTime;
+		  GenConfig.signalType = defaultSignalType;
 	  };
 	}
 	
 	if ( genEvents & EVENT_BUTTON2_CLICK )
 	{
-		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                 GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		
 		LastMenuItemID = GenMenu->MenuCurrentItem->MenuItemId;
 		GenMenu->MenuTransitionTimeInMS = 0;
@@ -107,52 +124,27 @@ void _clearDisplayNewBuffers(void)
 	}
 }
 
-void _copyStringToBuffer(char *_buffer, char *_string, uint8_t _pos)
+void _copyStringToBufferLtoR(char *_buffer, char *_string, uint8_t _posL)
 {
 	uint8_t i = 0;
-	while ( ( ( _pos + i ) < 16 ) && ( _string[i] ) )
+	while ( ( ( _posL + i ) < 17 ) && ( _string[i] ) )
 	{
-		_buffer[_pos+i] = _string[i];
+		_buffer[_posL + i - 1] = _string[i];
 		i++;
 	}
 }
 
-uint32_t getDeltaNumFromCursorPos(uint8_t _cursorPos)
-{
-	uint32_t result = 1;
-	while ( --_cursorPos )
-		result *= 10;
-	return result;		
-}
-
-void MenuAnimSelectionDraw(char *_buffer, uint8_t length, uint8_t leftBorder, uint8_t rightBorder, uint8_t frameAll, uint8_t frameNum)
+void _copyStringToBufferRtoL(char *_buffer, char *_string, uint8_t _strLen, uint8_t _posR)
 {
 	uint8_t i = 0;
-	if ( ( leftBorder >= length ) && ( ( rightBorder + length - 1 ) < 16 ) )
-		for ( i = 0; i < length; i++ )
-	  {
-		  if ( frameNum >= ( i * ( frameAll / length ) ) )
-		  {
-			  _buffer[leftBorder - length + i] = 0xC9;
-	      _buffer[rightBorder + length - i - 1] = 0xC8;
-		  };
-	  };
-}
-
-void MenuTickerDraw(char *_buffer, char *tickerText, int16_t *iteration)
-{
-	uint8_t i = 0;
-	uint8_t tickerLength = strlen(tickerText);
-	if ( ( abs(*iteration) + 16 ) <= tickerLength )
+	if ( !_strLen ) return;	
+	while ( ( ( _posR - i ) < 17 ) && ( ( _posR - i ) > 0 ) && ( (_strLen - i) > 0 ) && ( _string[i] ) )
 	{
-		for ( i = 0; i < 16; i++ )
-		{
-			_buffer[i] = tickerText[i + abs(*iteration)];		
-		}
-	};
-	(*iteration)++;
-  if ( ( abs(*iteration) + 16 ) > tickerLength ) *iteration = -(*iteration - 2);	
-}	
+		_buffer[_posR - i - 1] = _string[_strLen - i - 1];
+		i++;
+	}
+}
+
 
 void MenuTransitionDraw(const uint16_t frameNum)
 {	
@@ -202,21 +194,22 @@ void MenuTransitionDraw(const uint16_t frameNum)
 	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
 }
 
+//Menu HI
 uint8_t MenuHiDraw(const uint8_t frameNum)
 {
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "Hi!", 6);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Hi!", 7);	
 	//2 строка
-	_copyStringToBuffer(&Line2Buffer[0], "****************", 0);
+	_copyStringToBufferLtoR(&Line2Buffer[0], "****************", 1);
 	
 	//выходим после 1с
 	if ( frameNum >= GenMenu->MenuTargetDrawFPS )
 	{
 		menuTransDirection = 2; //влево(+)
 
-		Menu1Draw(0);
+		Menu1_StartMenuDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -226,49 +219,75 @@ uint8_t MenuHiDraw(const uint8_t frameNum)
 	return RESULT_OK;
 }
 
-uint8_t Menu1Draw(const uint8_t frameNum)
+//Menu OK
+uint8_t MenuOKDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+	  //1 строка
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "OK", 7);
+		return RESULT_OK;
+	};
+	
+	if ( frameNum > GenMenu->MenuTargetDrawFPS / 2 )
+	{
+		MenuGoToItemId(GenMenu, LastMenuItemID);
+		LastMenuItemID = 0;
+		GenMenu->MenuTransitionTimeInMS = MENU_TRANS_TIME;		
+	};
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "OK", 7);
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	return RESULT_OK;
+}
+
+//Menu1 - Start Menu
+uint8_t Menu1_StartMenuDraw(const uint8_t frameNum)
 {	
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
-	  _copyStringToBuffer(&Line1BufferNew[0], "F PWM = ", 1);
-	  snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-	  _copyStringToBuffer(&Line1BufferNew[0], displayString, 9);
-	  _copyStringToBuffer(&Line2BufferNew[0], "F Sig = ", 1);
-	  snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-	  _copyStringToBuffer(&Line2BufferNew[0], displayString, 9);
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "F PWM = ", 1);
+	  snprintf(displayString, 17, "%d", GenConfig.freqPWM);
+	  _copyStringToBufferRtoL(&Line1BufferNew[0], displayString, strlen(displayString), 16);
+	  _copyStringToBufferLtoR(&Line2BufferNew[0], "F Sig = ", 1);
+	  snprintf(displayString, 17, "%d", GenConfig.freqSignal);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
 		return RESULT_OK;
 	};
 	
 	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
 	_clearDisplayBuffers();
-	_copyStringToBuffer(&Line1Buffer[0], "F PWM = ", 1);
-	snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-	_copyStringToBuffer(&Line1Buffer[0], displayString, 9);
-	_copyStringToBuffer(&Line2Buffer[0], "F Sig = ", 1);
-	snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-	_copyStringToBuffer(&Line2Buffer[0], displayString, 9);
+	_copyStringToBufferLtoR(&Line1Buffer[0], "F PWM = ", 1);
+	snprintf(displayString, 17, "%d", GenConfig.freqPWM);
+	_copyStringToBufferRtoL(&Line1Buffer[0], displayString, strlen(displayString), 16);
+	_copyStringToBufferLtoR(&Line2Buffer[0], "F Sig = ", 1);
+	snprintf(displayString, 17, "%d", GenConfig.freqSignal);
+	_copyStringToBufferRtoL(&Line2Buffer[0], displayString, strlen(displayString), 16);
 	
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
 	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
 	return RESULT_OK;
 }
 
-uint8_t Menu1Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+uint8_t Menu1_StartMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 {
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода		
 		menuTransDirection = 2; //влево(+)
 
-		Menu2Draw(0);
+		Menu2_MainMenuDraw(0);
 		MenuGoToNextItem(GenMenu);
   };
 	
@@ -276,105 +295,309 @@ uint8_t Menu1Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	return RESULT_OK;
 }
 
-uint8_t Menu2Draw(const uint8_t frameNum)
+//Menu2 - Main Menu
+uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
-		//1 строка
-		_copyStringToBuffer(&Line1BufferNew[0], "F PWM = ", 1);
-		snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-		_copyStringToBuffer(&Line1BufferNew[0], displayString, 9);
-    //2 строка
-	  _copyStringToBuffer(&Line2BufferNew[0], "inc = ", 3);
-	  snprintf(displayString, 12, "%d", num2Val);
-	  _copyStringToBuffer(&Line2BufferNew[0], displayString, 9);
+	  //1 строка
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Main config ~", 3);	
+	  //2 строка
+    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter to MAIN config ", 1);
 		return RESULT_OK;
 	};
 	
-	if ( ! (Display.displayOnOffControl & HD44780_FLAG_CURSORON) ) HD44780DisplaySetCursorVisible(&Display, 1);
+	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
 	//очистка
-	_clearDisplayBuffers();
+	//_clearDisplayBuffers(); без очистки
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "F PWM = ", 1);
-	snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-	_copyStringToBuffer(&Line1Buffer[0], displayString, 9);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Main config ~", 3);
 	//2 строка
-	_copyStringToBuffer(&Line2Buffer[0], "inc = ", 3);
-	snprintf(displayString, 12, "%d", num2Val);
-	_copyStringToBuffer(&Line2Buffer[0], displayString, 9);
+	if ( !( frameNum % 25 ) )
+	{
+		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter to MAIN config ", 16, &menu_iteration);
+	};
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
 	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
-	//позиция курсора
-	switch ( cursorNumN )
-	{
-		case 1:
-			HD44780DisplayMoveCursor(&Display, 1, 10 + num1Length - num1CursorPos);
-		break;
-		case 2:
-			HD44780DisplayMoveCursor(&Display, 2, 10 + num2Length - num2CursorPos);
-		break;
-	};
 	return RESULT_OK;
 }
 
-uint8_t Menu2Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
-{
-	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
-	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
-	{
-		switch ( cursorNumN )
-		{
-			case 1:
-				if ( num1CursorPos > 1 ) num1CursorPos--;
-		  break;
-			case 2:
-				if ( num2CursorPos > 1 ) num2CursorPos--;
-		  break;
-	  };
+uint8_t Menu2_MainMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{	
+	//нажатие 3 или 4
+	if ( ( genEvents & EVENT_BUTTON3_CLICK ) || ( genEvents & EVENT_BUTTON4_CLICK ) )
+  {
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода		
+		menuTransDirection = 2; //влево(+)
+
+		Menu2_SubMenu1_ChangePWMFreqDraw(0);
+		MenuGoToChildItem(GenMenu);
+		
+		//выходим
 		return RESULT_OK;
-	};
-	
-	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
-	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
-	{
-		switch ( cursorNumN )
-		{
-			case 1:
-				if ( num1CursorPos < num1Length ) num1CursorPos++;
-		  break;
-			case 2:
-				if ( num2CursorPos < num2Length ) num2CursorPos++;
-		  break;
-	  };
-		return RESULT_OK;
-	};
+  };
 	
 	//событие при нажатии кнопки 5	
 	if ( genEvents & EVENT_BUTTON5_CLICK )
 	{
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода
 		menuTransDirection = 1; //вправо(-)
 		
-		Menu1Draw(0);
+		Menu1_StartMenuDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода		
+		menuTransDirection = 2; //влево(+)
+
+		Menu3_ExtraMenuDraw(0);
+		MenuGoToNextItem(GenMenu);
+  };
+	
+	Buttons_1_2_scan(genEvents);
+	return RESULT_OK;
+}
+
+//Menu3 - Extra Menu
+uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+	  //1 строка
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Extra config ~", 2);	
+	  //2 строка
+    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter to EXTRA config ", 1);
+		return RESULT_OK;
+	};
+	
+	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
+	
+	//очистка
+	//_clearDisplayBuffers(); без очистки
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Extra config ~", 2);
+	//2 строка
+	if ( !( frameNum % 25 ) )
+	{
+		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter to EXTRA config ", 16, &menu_iteration);
+	};
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	return RESULT_OK;
+}
+	
+uint8_t Menu3_ExtraMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{	
+	//нажатие 3 или 4
+	if ( ( genEvents & EVENT_BUTTON3_CLICK ) || ( genEvents & EVENT_BUTTON4_CLICK ) )
+  {
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода		
+		menuTransDirection = 2; //влево(+)
+
+		Menu3_SubMenu1_ChangeDeadTimeDraw(0);
+		MenuGoToChildItem(GenMenu);
+		
+		//выходим
+		return RESULT_OK;
+  };
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода
+		menuTransDirection = 1; //вправо(-)
+		
+		Menu2_MainMenuDraw(0);
+		MenuGoToPrevItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода		
+		menuTransDirection = 2; //влево(+)
+
+		Menu4_SaveMenuDraw(0);
+		MenuGoToNextItem(GenMenu);
+  };
+	
+	Buttons_1_2_scan(genEvents);
+	return RESULT_OK;
+}
+
+//Menu4 - Save Menu
+uint8_t Menu4_SaveMenuDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+	  //1 строка
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Save config?", 3);	
+	  //2 строка
+    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button for save ", 1);
+		return RESULT_OK;
+	};
+	
+	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
+	
+	//очистка
+	//_clearDisplayBuffers(); без очистки
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Save config?", 3);
+	//2 строка
+	if ( !( frameNum % 25 ) )
+	{
+		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button for save ", 16, &menu_iteration);
+	};
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	return RESULT_OK;
+}
+
+uint8_t Menu4_SaveMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода
+		menuTransDirection = 1; //вправо(-)
+		
+		Menu3_ExtraMenuDraw(0);
+		MenuGoToPrevItem(GenMenu);
+	};
+	
+	//нажатие 3 или 4
+	if ( ( genEvents & EVENT_BUTTON3_CLICK ) || ( genEvents & EVENT_BUTTON4_CLICK ) )
+	{
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода
 		menuTransDirection = 2; //влево(+)
 		
-		Menu3Draw(0);
+		Menu4_SubMenu1_SaveDialogDraw(0);
+		MenuGoToChildItem(GenMenu);		
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	return RESULT_OK;
+}
+
+//Menu2 - SubMenu1 - Change PWM Freq
+uint8_t Menu2_SubMenu1_ChangePWMFreqDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+		_copyStringToBufferLtoR(&Line1BufferNew[0], "F PWM = ", 1);
+		snprintf(displayString, 17, "%d", GenConfig.freqPWM);
+	  _copyStringToBufferRtoL(&Line1BufferNew[0], displayString, strlen(displayString), 16);
+    //2 строка
+	  _copyStringToBufferLtoR(&Line2BufferNew[0], "step = ", 2);
+	  snprintf(displayString, 17, "%d", incSize);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( ( !valMain ) && ( !valIncSize ) )
+	{
+		incSize = 1;
+		valMain = CreateAnimVarNumber(&Display, 1, 16, &GenConfig.freqPWM, 0, &incSize);
+		valIncSize = CreateAnimVarNumber(&Display, 2, 16, &incSize, 0, 0);	
+    AnimVarNumberEnable(valMain, 1);	
+    cursorNumN = 1;		
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "F PWM = ", 1);	
+	//2 строка
+	_copyStringToBufferLtoR(&Line2Buffer[0], "step = ", 2);
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);
+	AnimVarNumberDraw(valIncSize);
+	switch ( cursorNumN )
+	{
+		case 1:			
+		  AnimVarNumberDrawCursor(valMain);
+		break;
+		
+		case 2:			
+		  AnimVarNumberDrawCursor(valIncSize);
+		break;
+	}
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu2_SubMenu1_ChangePWMFreqEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		AnimVarNumberCursorMoveRight(valIncSize);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		AnimVarNumberCursorMoveLeft(valIncSize);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		
+		Menu2_MainMenuDraw(0);
+		MenuGoToParentItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		
+		Menu2_SubMenu2_ChangeSignalFreqDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -384,26 +607,22 @@ uint8_t Menu2Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = num2Val * getDeltaNumFromCursorPos(num1CursorPos);
-				if ( GenConfig.freqPWM > bufferVal )
-					bufferVal = GenConfig.freqPWM - bufferVal;
-				if ( FrequencyCheck(bufferVal, GenConfig.freqSignal) )
+				bufferVal = GenConfig.freqPWM;
+				AnimVarNumberDec(valMain);
+				if ( ( GenConfig.freqPWM > 0 ) && FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
+				{
+					if ( GenConfig.isImmediateUpdate )
+						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                         GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		    } else
 				{
 					GenConfig.freqPWM = bufferVal;
-					snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-					num1Length = strlen(displayString);
-					if ( GenConfig.isImmediateUpdate )
-						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
-		    }
+				}
 		  break;
 			case 2:
-				bufferVal = getDeltaNumFromCursorPos(num2CursorPos);
-				if ( num2Val > bufferVal )
-					num2Val -= bufferVal;
-				if ( num2Val < DeltaValMinValue )
-					num2Val = DeltaValMinValue;
-				snprintf(displayString, 12, "%d", num2Val);
-				num2Length = strlen(displayString);
+				AnimVarNumberDec(valIncSize);
+				if ( incSize < DeltaValMinValue )
+					incSize = DeltaValMinValue;
 		  break;
 	  };
 	};
@@ -414,25 +633,22 @@ uint8_t Menu2Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = GenConfig.freqPWM + num2Val * getDeltaNumFromCursorPos(num1CursorPos);
-				if ( FrequencyCheck(bufferVal, GenConfig.freqSignal) )
+				bufferVal = GenConfig.freqPWM;
+				AnimVarNumberInc(valMain);
+				if ( ( GenConfig.freqPWM > 0 ) && FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
+				{
+					if ( GenConfig.isImmediateUpdate )
+						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                         GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		    } else
 				{
 					GenConfig.freqPWM = bufferVal;
-					snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-					num1Length = strlen(displayString);
-					if ( num1CursorPos > num1Length ) num1CursorPos = num1Length;
-					if ( GenConfig.isImmediateUpdate )
-						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
-		    }
+				}
 		  break;
 			case 2:
-				bufferVal = getDeltaNumFromCursorPos(num2CursorPos);
-			  num2Val += bufferVal;
-				if ( num2Val > DeltaValMaxValue )
-					num2Val = DeltaValMaxValue;
-				snprintf(displayString, 12, "%d", num2Val);
-				num2Length = strlen(displayString);
-				if ( num2CursorPos > num2Length ) num2CursorPos = num2Length;
+				AnimVarNumberInc(valIncSize);
+				if ( incSize > DeltaValMaxValue )
+					incSize = DeltaValMaxValue;
 		  break;
 	  };
 	};
@@ -440,15 +656,17 @@ uint8_t Menu2Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	//событие при нажатии кнопки 3
 	if ( genEvents & EVENT_BUTTON3_CLICK )
 	{
-		cursorNumN--;
-		if ( cursorNumN < 1 ) cursorNumN = 1;
+		cursorNumN = 1;
+		AnimVarNumberEnable(valMain, 1);
+		AnimVarNumberEnable(valIncSize, 0);
 	};
 	
 	//событие при нажатии кнопки 4
 	if ( genEvents & EVENT_BUTTON4_CLICK )
 	{
-		cursorNumN++;
-		if ( cursorNumN > 2 ) cursorNumN = 2;
+		cursorNumN = 2;
+		AnimVarNumberEnable(valMain, 0);
+		AnimVarNumberEnable(valIncSize, 1);
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -456,112 +674,96 @@ uint8_t Menu2Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	return RESULT_OK;
 }
 
-uint8_t Menu3Draw(const uint8_t frameNum)
+//Menu2 - SubMenu2 - Change Signal Freq
+uint8_t Menu2_SubMenu2_ChangeSignalFreqDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBuffer(&Line1BufferNew[0], "F Sign = ", 1);
-		snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-		_copyStringToBuffer(&Line1BufferNew[0], displayString, 10);
+		_copyStringToBufferLtoR(&Line1BufferNew[0], "F sign = ", 1);
+		snprintf(displayString, 17, "%d", GenConfig.freqSignal);
+	  _copyStringToBufferRtoL(&Line1BufferNew[0], displayString, strlen(displayString), 16);
     //2 строка
-	  _copyStringToBuffer(&Line2BufferNew[0], "inc = ", 3);
-	  snprintf(displayString, 12, "%d", num2Val);
-	  _copyStringToBuffer(&Line2BufferNew[0], displayString, 9);
+	  _copyStringToBufferLtoR(&Line2BufferNew[0], "step = ", 3);
+	  snprintf(displayString, 17, "%d", incSize);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
 		return RESULT_OK;
 	};
 	
-	if ( ! (Display.displayOnOffControl & HD44780_FLAG_CURSORON) ) HD44780DisplaySetCursorVisible(&Display, 1);
+	//проверка полей ввода, создание при необходимости
+	if ( ( !valMain ) && ( !valIncSize ) )
+	{
+		incSize = 1;
+		valMain = CreateAnimVarNumber(&Display, 1, 16, &GenConfig.freqSignal, 0, &incSize);
+		valIncSize = CreateAnimVarNumber(&Display, 2, 16, &incSize, 0, 0);	
+    AnimVarNumberEnable(valMain, 1);	
+    cursorNumN = 1;		
+	}
 	
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "F Sign = ", 1);
-	snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-	_copyStringToBuffer(&Line1Buffer[0], displayString, 10);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], "F sign = ", 1);	
 	//2 строка
-	_copyStringToBuffer(&Line2Buffer[0], "inc = ", 3);
-	snprintf(displayString, 12, "%d", num2Val);
-	_copyStringToBuffer(&Line2Buffer[0], displayString, 9);
+	_copyStringToBufferLtoR(&Line2Buffer[0], "step = ", 3);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
 	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
-	//позиция курсора
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);
+	AnimVarNumberDraw(valIncSize);
 	switch ( cursorNumN )
 	{
-		case 1:
-			HD44780DisplayMoveCursor(&Display, 1, 11 + num1Length - num1CursorPos);
+		case 1:			
+		  AnimVarNumberDrawCursor(valMain);
 		break;
-		case 2:
-			HD44780DisplayMoveCursor(&Display, 2, 10 + num2Length - num2CursorPos);
+		
+		case 2:			
+		  AnimVarNumberDrawCursor(valIncSize);
 		break;
-	};
+	}
+	
 	return RESULT_OK;
 }
 
-uint8_t Menu3Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+uint8_t Menu2_SubMenu2_ChangeSignalFreqEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 {
 	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
 	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
 	{
-		switch ( cursorNumN )
-		{
-			case 1:
-				if ( num1CursorPos > 1 ) num1CursorPos--;
-		  break;
-			case 2:
-				if ( num2CursorPos > 1 ) num2CursorPos--;
-		  break;
-	  };
+		AnimVarNumberCursorMoveRight(valMain);
+		AnimVarNumberCursorMoveRight(valIncSize);
 		return RESULT_OK;
 	};
 	
 	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
 	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
 	{
-		switch ( cursorNumN )
-		{
-			case 1:
-				if ( num1CursorPos < num1Length ) num1CursorPos++;
-		  break;
-			case 2:
-				if ( num2CursorPos < num2Length ) num2CursorPos++;
-		  break;
-	  };
+		AnimVarNumberCursorMoveLeft(valMain);
+		AnimVarNumberCursorMoveLeft(valIncSize);
 		return RESULT_OK;
 	};
 	
 	//событие при нажатии кнопки 5	
 	if ( genEvents & EVENT_BUTTON5_CLICK )
 	{
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%d", GenConfig.freqPWM);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
 		
-		Menu2Draw(0);
+		Menu2_SubMenu1_ChangePWMFreqDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
 		
-		Menu4Draw(0);
+		Menu2_SubMenu3_ChangeSignalPowerDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -571,26 +773,22 @@ uint8_t Menu3Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = num2Val * getDeltaNumFromCursorPos(num1CursorPos);
-				if ( GenConfig.freqSignal > bufferVal )
-					bufferVal = GenConfig.freqSignal - bufferVal;
-				if ( FrequencyCheck(GenConfig.freqPWM, bufferVal) )
+				bufferVal = GenConfig.freqSignal;
+				AnimVarNumberDec(valMain);
+				if ( ( GenConfig.freqSignal > 0 ) && FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
+				{
+					if ( GenConfig.isImmediateUpdate )
+						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                         GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		    } else
 				{
 					GenConfig.freqSignal = bufferVal;
-					snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-					num1Length = strlen(displayString);
-					if ( GenConfig.isImmediateUpdate )
-						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
-		    }
+				}
 		  break;
 			case 2:
-				bufferVal = getDeltaNumFromCursorPos(num2CursorPos);
-				if ( num2Val > bufferVal )
-					num2Val -= bufferVal;
-				if ( num2Val < DeltaValMinValue )
-					num2Val = DeltaValMinValue;
-				snprintf(displayString, 12, "%d", num2Val);
-				num2Length = strlen(displayString);
+				AnimVarNumberDec(valIncSize);
+				if ( incSize < DeltaValMinValue )
+					incSize = DeltaValMinValue;
 		  break;
 	  };
 	};
@@ -601,25 +799,22 @@ uint8_t Menu3Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = GenConfig.freqSignal + num2Val * getDeltaNumFromCursorPos(num1CursorPos);
-				if ( FrequencyCheck(GenConfig.freqPWM, bufferVal) )
+				bufferVal = GenConfig.freqSignal;
+				AnimVarNumberInc(valMain);
+				if ( ( GenConfig.freqSignal > 0 ) && FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
+				{
+					if ( GenConfig.isImmediateUpdate )
+						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                         GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		    } else
 				{
 					GenConfig.freqSignal = bufferVal;
-					snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-					num1Length = strlen(displayString);
-					if ( num1CursorPos > num1Length ) num1CursorPos = num1Length;
-					if ( GenConfig.isImmediateUpdate )
-						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
-		    }
+				}
 		  break;
 			case 2:
-				bufferVal = getDeltaNumFromCursorPos(num2CursorPos);
-			  num2Val += bufferVal;
-				if ( num2Val > DeltaValMaxValue )
-					num2Val = DeltaValMaxValue;
-				snprintf(displayString, 12, "%d", num2Val);
-				num2Length = strlen(displayString);
-				if ( num2CursorPos > num2Length ) num2CursorPos = num2Length;
+				AnimVarNumberInc(valIncSize);
+				if ( incSize > DeltaValMaxValue )
+					incSize = DeltaValMaxValue;
 		  break;
 	  };
 	};
@@ -627,15 +822,17 @@ uint8_t Menu3Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	//событие при нажатии кнопки 3
 	if ( genEvents & EVENT_BUTTON3_CLICK )
 	{
-		cursorNumN--;
-		if ( cursorNumN < 1 ) cursorNumN = 1;
+		cursorNumN = 1;
+		AnimVarNumberEnable(valMain, 1);
+		AnimVarNumberEnable(valIncSize, 0);
 	};
 	
 	//событие при нажатии кнопки 4
 	if ( genEvents & EVENT_BUTTON4_CLICK )
 	{
-		cursorNumN++;
-		if ( cursorNumN > 2 ) cursorNumN = 2;
+		cursorNumN = 2;
+		AnimVarNumberEnable(valMain, 0);
+		AnimVarNumberEnable(valIncSize, 1);
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -643,117 +840,99 @@ uint8_t Menu3Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	return RESULT_OK;
 }
 
-uint8_t Menu4Draw(const uint8_t frameNum)
+//Menu2 - SubMenu3 - Change Signal Power
+uint8_t Menu2_SubMenu3_ChangeSignalPowerDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBuffer(&Line1BufferNew[0], "Power K", 4);
+		_copyStringToBufferLtoR(&Line1BufferNew[0], "Power factor", 3);
     //2 строка
-		snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-	  _copyStringToBuffer(&Line2BufferNew[0], displayString, 5);
+	  snprintf(displayString, 17, "%.2lf", (double)GenConfig.powerK / 100);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 12);
 		return RESULT_OK;
 	};
 	
-	if ( ! (Display.displayOnOffControl & HD44780_FLAG_CURSORON) ) HD44780DisplaySetCursorVisible(&Display, 1);
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 12, &GenConfig.powerK, 2, 0);
+    AnimVarNumberEnable(valMain, 1);		
+	}
 	
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "Power K", 4);	
-	//2 строка
-	snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-	_copyStringToBuffer(&Line2Buffer[0], displayString, 5);
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Power factor", 3);	
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
 	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
-	//позиция курсора
-	HD44780DisplayMoveCursor(&Display, 2, 6 + num1Length - num1CursorPos);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);		
+	AnimVarNumberDrawCursor(valMain);
+	
 	return RESULT_OK;
 }
 
-uint8_t Menu4Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 {
 	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
 	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
 	{
-		if ( num1CursorPos > 1 ) num1CursorPos--;
-		if ( num1CursorPos == 3 ) num1CursorPos = 2;
+		AnimVarNumberCursorMoveRight(valMain);
 		return RESULT_OK;
 	};
 	
 	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
 	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
 	{
-		if ( num1CursorPos < num1Length ) num1CursorPos++;
-		if ( num1CursorPos == 3 ) num1CursorPos = 4;
+		AnimVarNumberCursorMoveLeft(valMain);
 		return RESULT_OK;
 	};
 	
 	//событие при нажатии кнопки 5	
 	if ( genEvents & EVENT_BUTTON5_CLICK )
 	{
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%d", GenConfig.freqSignal);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
 		
-		Menu3Draw(0);
+		Menu2_SubMenu2_ChangeSignalFreqDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
 		
-		Menu5Draw(0);
+		Menu2_SubMenu4_ChangeSignalCenterDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
 	//событие при вращении валкодера против ч стрелки
 	if ( genEvents & EVENT_VALCODER_CCW )
 	{
-		bufferVal = ( num1CursorPos > 3 ) ? getDeltaNumFromCursorPos(num1CursorPos-1) : getDeltaNumFromCursorPos(num1CursorPos);
-		bufferValDouble = (double)bufferVal / 100;
-		if ( ( GenConfig.powerK > bufferValDouble ) &&
-         ( ( GenConfig.powerK - bufferValDouble ) >= MIN_POWER_K ) )
-		{
-			GenConfig.powerK -= bufferValDouble;
-			snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-			num1Length = strlen(displayString);
-			if ( num1CursorPos > num1Length ) num1CursorPos = num1Length;
-			if ( GenConfig.isImmediateUpdate )
-				UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
-		};
+		AnimVarNumberDec(valMain);
+		if ( GenConfig.powerK < MIN_POWER_K )
+			GenConfig.powerK = MIN_POWER_K;
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 	};
 	
 	//событие при вращении валкодера по ч стрелке
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
-		bufferVal = ( num1CursorPos > 3 ) ? getDeltaNumFromCursorPos(num1CursorPos-1) : getDeltaNumFromCursorPos(num1CursorPos);
-		bufferValDouble = (double)bufferVal / 100;
-		if ( ( GenConfig.powerK + bufferValDouble ) <= MAX_POWER_K )
-		{
-			GenConfig.powerK += bufferValDouble;
-			snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-			num1Length = strlen(displayString);
-			if ( GenConfig.isImmediateUpdate )
-				UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
-		};
+		AnimVarNumberInc(valMain);
+		if ( GenConfig.powerK > MAX_POWER_K )
+			GenConfig.powerK = MAX_POWER_K;
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -761,22 +940,329 @@ uint8_t Menu4Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	return RESULT_OK;
 }
 
-uint8_t Menu5Draw(const uint8_t frameNum)
+//Menu2 - SubMenu4 - Change Signal Center
+uint8_t Menu2_SubMenu4_ChangeSignalCenterDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-	  _copyStringToBuffer(&Line1BufferNew[0], "Signal  type", 2);	
+		_copyStringToBufferLtoR(&Line1BufferNew[0], "Center factor", 2);
+    //2 строка
+	  snprintf(displayString, 17, "%.2lf", (double)GenConfig.centerK / 100);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 12);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 12, &GenConfig.centerK, 2, 0);
+    AnimVarNumberEnable(valMain, 1);		
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Center factor", 2);	
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);		
+	AnimVarNumberDrawCursor(valMain);
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu2_SubMenu4_ChangeSignalCenterEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		
+		Menu2_SubMenu3_ChangeSignalPowerDraw(0);
+		MenuGoToPrevItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		
+		Menu2_MainMenuDraw(0);
+		MenuGoToParentItem(GenMenu);
+	};
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		AnimVarNumberDec(valMain);
+		if ( GenConfig.centerK < MIN_CENTER_K )
+			GenConfig.centerK = MIN_CENTER_K;
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		AnimVarNumberInc(valMain);
+		if ( GenConfig.centerK > MAX_CENTER_K )
+			GenConfig.centerK = MAX_CENTER_K;
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu3 - SubMenu1 - Change Dead Time
+uint8_t Menu3_SubMenu1_ChangeDeadTimeDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+		_copyStringToBufferLtoR(&Line1BufferNew[0], "Dead Time", 4);
+    //2 строка
+		_copyStringToBufferLtoR(&Line2BufferNew[0], "ns", 12);
+	  snprintf(displayString, 17, "%d", GenConfig.pwmDeadTimeInNS);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 10);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 10, &GenConfig.pwmDeadTimeInNS, 0, 0);	
+    AnimVarNumberEnable(valMain, 1);			
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Dead Time", 4);	
+	//2 строка
+	_copyStringToBufferLtoR(&Line2Buffer[0], "ns", 12);
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);			
+	AnimVarNumberDrawCursor(valMain);
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu3_SubMenu1_ChangeDeadTimeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		
+		Menu3_ExtraMenuDraw(0);
+		MenuGoToParentItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		
+		Menu3_SubMenu2_ChangeMinPulseTimeDraw(0);
+		MenuGoToNextItem(GenMenu);
+	};
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		AnimVarNumberDec(valMain);
+		if ( GenConfig.pwmDeadTimeInNS < MIN_DEAD_TIME )
+			GenConfig.pwmDeadTimeInNS = MIN_DEAD_TIME;
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		AnimVarNumberInc(valMain);
+		if ( GenConfig.pwmDeadTimeInNS > MAX_DEAD_TIME )
+			GenConfig.pwmDeadTimeInNS = MAX_DEAD_TIME;		
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu3 - SubMenu2 - Change Minimum Pulse Time
+uint8_t Menu3_SubMenu2_ChangeMinPulseTimeDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+		_copyStringToBufferLtoR(&Line1BufferNew[0], "Min pulse time", 2);
+    //2 строка
+		_copyStringToBufferLtoR(&Line2BufferNew[0], "ns", 12);
+	  snprintf(displayString, 17, "%d", GenConfig.pwmMinPulseLengthInNS);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 10);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 10, &GenConfig.pwmMinPulseLengthInNS, 0, 0);	
+    AnimVarNumberEnable(valMain, 1);			
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Min pulse time", 2);	
+	//2 строка
+	_copyStringToBufferLtoR(&Line2Buffer[0], "ns", 12);
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);			
+	AnimVarNumberDrawCursor(valMain);
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu3_SubMenu2_ChangeMinPulseTimeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		
+		Menu3_SubMenu1_ChangeDeadTimeDraw(0);
+		MenuGoToPrevItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		
+		Menu3_SubMenu3_ChangeSignalTypeDraw(0);
+		MenuGoToNextItem(GenMenu);
+	};
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		AnimVarNumberDec(valMain);
+		if ( GenConfig.pwmMinPulseLengthInNS < MIN_PULSE_TIME )
+			GenConfig.pwmMinPulseLengthInNS = MIN_PULSE_TIME;
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		AnimVarNumberInc(valMain);
+		if ( GenConfig.pwmMinPulseLengthInNS > MAX_PULSE_TIME )
+			GenConfig.pwmMinPulseLengthInNS = MAX_PULSE_TIME;		
+		if ( GenConfig.isImmediateUpdate )
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu3 - SubMenu3 - Change Minimum Pulse Time
+uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Signal  type", 3);	
 	  //2 строка
 	  switch ( GenConfig.signalType )
 		{
 			case 1:
-				_copyStringToBuffer(&Line2BufferNew[0], "Sinus", 5);
+				_copyStringToBufferLtoR(&Line2BufferNew[0], "Sinus", 6);
 		  break;
 			
 			case 2:
-				_copyStringToBuffer(&Line2BufferNew[0], "Triangle", 4);
+				_copyStringToBufferLtoR(&Line2BufferNew[0], "Triangle", 5);
 		  break;
 	   };
 		return RESULT_OK;
@@ -787,19 +1273,19 @@ uint8_t Menu5Draw(const uint8_t frameNum)
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "Signal  type", 2);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Signal  type", 3);	
 	//2 строка
 	switch ( GenConfig.signalType )
 	{
 		case 1:
-			_copyStringToBuffer(&Line2Buffer[0], "Sinus", 5);
-		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 10, GenMenu->MenuTargetDrawFPS, frameNum); 
+			_copyStringToBufferLtoR(&Line2Buffer[0], "Sinus", 6);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		  Line2Buffer[15] = 0xC8;
 		break;
 		
 		case 2:
-			_copyStringToBuffer(&Line2Buffer[0], "Triangle", 4);
-		  MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 12, GenMenu->MenuTargetDrawFPS, frameNum);
+			_copyStringToBufferLtoR(&Line2Buffer[0], "Triangle", 5);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 13, 16, GenMenu->MenuTargetDrawFPS, frameNum);
 		break;
 	};
 	
@@ -809,31 +1295,25 @@ uint8_t Menu5Draw(const uint8_t frameNum)
 	return RESULT_OK;
 }
 
-
-uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 {	
 	//событие при нажатии кнопки 5	
 	if ( genEvents & EVENT_BUTTON5_CLICK )
 	{
-		num1CursorPos = 1;
-		snprintf(displayString, 12, "%.2lf", GenConfig.powerK);
-		num1Length = strlen(displayString);
-		num2Val = 1;
-		num2CursorPos = 1;
-    num2Length = 1;
-		cursorNumN = 1;
+		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
 		
-		Menu4Draw(0);
+		Menu3_SubMenu2_ChangeMinPulseTimeDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
+		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
 		
-		Menu6Draw(0);
+		Menu3_SubMenu4_ChangeUpdateTypeDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -842,7 +1322,8 @@ uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	{
 		if ( !--GenConfig.signalType ) GenConfig.signalType = 1;
 		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		LedUpdate();
 	};
 	
@@ -851,7 +1332,8 @@ uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	{
 		if ( ++GenConfig.signalType > 2 ) GenConfig.signalType = 2;
 		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 	  LedUpdate();
 	};
 	
@@ -859,21 +1341,22 @@ uint8_t Menu5Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	
 	return RESULT_OK;
 }
-
-uint8_t Menu6Draw(const uint8_t frameNum)
+	
+//Menu3 - SubMenu4 - Change Minimum Pulse Time
+uint8_t Menu3_SubMenu4_ChangeUpdateTypeDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-	  _copyStringToBuffer(&Line1BufferNew[0], "Signal  update", 1);	
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Signal  update", 2);	
 	  //2 строка
 	  if ( GenConfig.isImmediateUpdate )
 	  {
-		  _copyStringToBuffer(&Line2BufferNew[0], "Auto", 6);
+		  _copyStringToBufferLtoR(&Line2BufferNew[0], "Auto", 7);
 	  } else
 	  {
-		  _copyStringToBuffer(&Line2BufferNew[0], "Manually", 4);
+		  _copyStringToBufferLtoR(&Line2BufferNew[0], "Manually", 5);
 	  };
 		return RESULT_OK;
 	};
@@ -883,16 +1366,16 @@ uint8_t Menu6Draw(const uint8_t frameNum)
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "Signal  update", 1);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Signal  update", 2);	
 	//2 строка
 	if ( GenConfig.isImmediateUpdate )
 	{
-		_copyStringToBuffer(&Line2Buffer[0], "Auto", 6);
-		MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 10, GenMenu->MenuTargetDrawFPS, frameNum);
+		_copyStringToBufferLtoR(&Line2Buffer[0], "Auto", 7);
+		MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum);
 	} else
 	{
-		_copyStringToBuffer(&Line2Buffer[0], "Manually", 4);
-		MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 12, GenMenu->MenuTargetDrawFPS, frameNum);
+		_copyStringToBufferLtoR(&Line2Buffer[0], "Manually", 5);
+		MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 13, 16, GenMenu->MenuTargetDrawFPS, frameNum);
 	};
 	
 	//выводим на дисплей
@@ -901,27 +1384,27 @@ uint8_t Menu6Draw(const uint8_t frameNum)
 	return RESULT_OK;
 }
 
-
-uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+uint8_t Menu3_SubMenu4_ChangeUpdateTypeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 {	
 	//событие при нажатии кнопки 5	
 	if ( genEvents & EVENT_BUTTON5_CLICK )
 	{
+		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
 		
-		Menu5Draw(0);
+		Menu3_SubMenu3_ChangeSignalTypeDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
 	if ( genEvents & EVENT_BUTTON6_CLICK )
   {
+		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		menu7_iteration = 0;
 		
-		Menu7Draw(0);
-		MenuGoToNextItem(GenMenu);
-	};
+		Menu3_ExtraMenuDraw(0);
+		MenuGoToParentItem(GenMenu);
+	};	
 	
 	//событие при вращении валкодера против ч стрелки
 	if ( genEvents & EVENT_VALCODER_CCW )
@@ -934,7 +1417,8 @@ uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
 		GenConfig.isImmediateUpdate = 1;
-		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.signalType);
+		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
+                 GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		LedUpdate();
 	};
 	
@@ -943,72 +1427,16 @@ uint8_t Menu6Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 	return RESULT_OK;
 }
 
-uint8_t Menu7Draw(const uint8_t frameNum)
+//Menu4 - SubMenu1 - Save Dialog
+uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
 	  //1 строка
-	  _copyStringToBuffer(&Line1BufferNew[0], "Save config?", 2);	
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Config", 6);	
 	  //2 строка
-    _copyStringToBuffer(&Line2BufferNew[0], "Press valc button for save", 0);
-		return RESULT_OK;
-	};
-	
-	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
-	
-	//очистка
-	//_clearDisplayBuffers(); без очистки
-	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "  Save config?  ", 0);	
-	//2 строка
-	if ( !( frameNum % 25 ) )
-	{
-		MenuTickerDraw(&Line2Buffer[0], " Press valcoder button for save ", &menu7_iteration);
-	};
-	
-	//выводим на дисплей
-	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
-	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
-	return RESULT_OK;
-}
-
-
-uint8_t Menu7Events(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
-{	
-	//событие при нажатии кнопки 5	
-	if ( genEvents & EVENT_BUTTON5_CLICK )
-	{
-		menuTransDirection = 1; //вправо(-)
-		
-		Menu6Draw(0);
-		MenuGoToPrevItem(GenMenu);
-	};
-	
-	//событие при нажатии кнопки валкодера
-	if ( genEvents & EVENT_VALCODER_BUTTON_CLICK )
-	{
-		bufferVal = 0;
-		menuTransDirection = 2; //влево(+)
-		
-		MenuSaveDraw(0);
-		MenuGoToChildItem(GenMenu);		
-	};
-	
-	Buttons_1_2_scan(genEvents);
-	
-	return RESULT_OK;
-}
-
-uint8_t MenuSaveDraw(const uint8_t frameNum)
-{
-	if ( frameNum == 0 )
-	{
-		_clearDisplayNewBuffers();
-	  //1 строка
-	  _copyStringToBuffer(&Line1BufferNew[0], "Config", 5);	
-	  //2 строка
-    _copyStringToBuffer(&Line2BufferNew[0], "......", 5);
+    _copyStringToBufferLtoR(&Line2BufferNew[0], "......", 6);
 		return RESULT_OK;
 	};
 	
@@ -1019,15 +1447,15 @@ uint8_t MenuSaveDraw(const uint8_t frameNum)
 		//очистка
 	  _clearDisplayBuffers();
 	  //1 строка
-	  _copyStringToBuffer(&Line1Buffer[0], "Config", 5);	
+	  _copyStringToBufferLtoR(&Line1Buffer[0], "Config", 6);	
 	  //2 строка
 		//сохранение
 		if ( FlashWriteData( (uint8_t*)&GenConfig, sizeof(GenConfig) ) )
 		{
-			_copyStringToBuffer(&Line2Buffer[0], "saved!", 5);
+			_copyStringToBufferLtoR(&Line2Buffer[0], "saved!", 6);
 		} else
 		{
-			_copyStringToBuffer(&Line2Buffer[0], "failed! :(", 3);
+			_copyStringToBufferLtoR(&Line2Buffer[0], "failed! :(", 4);
 		};		
 	};
 	
@@ -1036,39 +1464,14 @@ uint8_t MenuSaveDraw(const uint8_t frameNum)
 	//при bufferVal = ( 3 сек ) выходим
 	if ( ( bufferVal * ( 1000 / GenMenu->MenuTargetDrawFPS ) ) > 3000 )
 	{
-		bufferVal = 0;
+		//очищаем
+		FreeDataWhenTransition();
+		//уст направление перехода
 		menuTransDirection = 1; //вправо(-)
 		
-		Menu7Draw(0);
+		Menu4_SaveMenuDraw(0);
 		MenuGoToParentItem(GenMenu);
 	};	
-	
-	//выводим на дисплей
-	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
-	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
-	return RESULT_OK;
-}
-
-uint8_t MenuOKDraw(const uint8_t frameNum)
-{
-	if ( frameNum == 0 )
-	{
-		_clearDisplayNewBuffers();
-	  //1 строка
-	  _copyStringToBuffer(&Line1BufferNew[0], "OK", 7);
-		return RESULT_OK;
-	};
-	
-	if ( frameNum > GenMenu->MenuTargetDrawFPS / 2 )
-	{
-		MenuGoToItemId(GenMenu, LastMenuItemID);
-		GenMenu->MenuTransitionTimeInMS = MENU_TRANS_TIME;
-	};
-	
-	//очистка
-	_clearDisplayBuffers();
-	//1 строка
-	_copyStringToBuffer(&Line1Buffer[0], "OK", 7);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);

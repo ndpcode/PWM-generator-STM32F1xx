@@ -41,9 +41,9 @@ typedef struct
 TREE_MENU *MenuCreate(uint8_t targetDrawFPS, uint16_t targetEventFPS, SYS_EVENTS_DATA (*_ExternalGetEventsFunc)(void),
 	                    void (*_MenuTransitionFunc)(const uint16_t), uint16_t _menuTransitionTimeInMs,
 											uint8_t (*HeadMenuDrawFunc)(const uint8_t), uint8_t (*HeadMenuEventsFunc)(const uint16_t, SYS_EVENTS_DATA));
-uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint8_t),
+uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint16_t parentItemId, uint8_t (*_MenuDrawFunc)(const uint8_t),
                          uint8_t (*_MenuEventsFunc)(const uint16_t, SYS_EVENTS_DATA));
-uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint8_t),
+uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint16_t parentItemId, uint8_t (*_MenuDrawFunc)(const uint8_t),
 	                      uint8_t (*_MenuEventsFunc)(const uint16_t, SYS_EVENTS_DATA));
 uint8_t MenuGoToHeadItem(TREE_MENU *menuHead);
 uint8_t MenuGoToPrevItem(TREE_MENU *menuHead);

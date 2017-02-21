@@ -112,7 +112,7 @@ TREE_MENU *MenuCreate(uint8_t targetDrawFPS, uint16_t targetEventFPS, SYS_EVENTS
 	return newMenu;
 }
 
-uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint8_t),
+uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint16_t parentItemId, uint8_t (*_MenuDrawFunc)(const uint8_t),
                          uint8_t (*_MenuEventsFunc)(const uint16_t, SYS_EVENTS_DATA))
 {
 	TREE_MENU_ITEM *newMenuItem = 0;
@@ -122,8 +122,16 @@ uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uin
 	//проверка разрешения на изменение
 	if ( !menuHead->MenuEditAllow ) return 0;
 
-	//ищем последний добавленный элемент
-	lastMenuItem = getLastMenuItem(menuHead);
+	//ищем родительский элемент, если указан Id
+	if ( parentItemId )
+	{
+		lastMenuItem = getMenuItemById(menuHead->MenuHeadItem, parentItemId); 
+	};
+	//ищем последний добавленный элемент, если не найден элемент по parentItemId
+	if ( !lastMenuItem )
+	{
+		lastMenuItem = getLastMenuItem(menuHead);
+	};
 	if ( !lastMenuItem ) return 0;
 	//создаем новый элемент и заполняем
 	newMenuItem = (TREE_MENU_ITEM*)malloc(sizeof(TREE_MENU_ITEM));
@@ -148,7 +156,7 @@ uint16_t MenuAddNextItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uin
 	return newMenuItem->MenuItemId;
 }
 
-uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint8_t),
+uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint16_t parentItemId, uint8_t (*_MenuDrawFunc)(const uint8_t),
 	                      uint8_t (*_MenuEventsFunc)(const uint16_t, SYS_EVENTS_DATA))
 {
 	TREE_MENU_ITEM *newMenuItem;
@@ -158,8 +166,16 @@ uint16_t MenuAddSubItem(TREE_MENU *menuHead, uint8_t (*_MenuDrawFunc)(const uint
 	//проверка разрешения на изменение
 	if ( !menuHead->MenuEditAllow ) return 0;
 
-	//ищем последний добавленный элемент
-	parentMenuItem = getLastMenuItem(menuHead);
+	//ищем родительский элемент, если указан Id
+	if ( parentItemId )
+	{
+		parentMenuItem = getMenuItemById(menuHead->MenuHeadItem, parentItemId); 
+	};
+	//ищем последний добавленный элемент, если не найден элемент по parentItemId
+	if ( !parentMenuItem )
+	{
+		parentMenuItem = getLastMenuItem(menuHead);
+	};
 	if ( !parentMenuItem ) return 0;
 	//создаем новый элемент и заполняем
 	newMenuItem = (TREE_MENU_ITEM*)malloc(sizeof(TREE_MENU_ITEM));
@@ -252,7 +268,7 @@ uint8_t MenuGoToItemId(TREE_MENU *menuHead, uint16_t MeniItemId)
 
 uint8_t MenuUpdate(TREE_MENU *menuHead, uint16_t ClockSecond, uint16_t ClockMillisecond)
 {
-	uint32_t _deltaT, _nowTime;
+	uint32_t _deltaT, _deltaTEvents, _nowTime;
 	SYS_EVENTS_DATA _events;
 	//проверка входных данных
 	if ( !menuCheckMainConfig(menuHead) ) return 0;
@@ -264,11 +280,17 @@ uint8_t MenuUpdate(TREE_MENU *menuHead, uint16_t ClockSecond, uint16_t ClockMill
 	//вычисление delta t, защита от переполнения в 59с
 	_deltaT = ( _nowTime >= menuHead->MenuDrawClock ) ?
 		            (_nowTime - menuHead->MenuDrawClock) : (60000 - menuHead->MenuDrawClock + _nowTime);
+	_deltaTEvents = ( _nowTime >= menuHead->MenuEventsClock ) ?
+		              (_nowTime - menuHead->MenuEventsClock) : (60000 - menuHead->MenuEventsClock + _nowTime);
   //защита от переполнения при зависании - порог 1000 мс
 	if ( _deltaT > 1000 )
 	{
 		_deltaT = 0;
 		menuHead->MenuDrawClock = _nowTime;
+	};
+	if ( _deltaTEvents > 1000 )
+	{
+		_deltaTEvents = 0;
 		menuHead->MenuEventsClock = _nowTime;
 	};
 	
@@ -303,9 +325,9 @@ uint8_t MenuUpdate(TREE_MENU *menuHead, uint16_t ClockSecond, uint16_t ClockMill
 	};
 	
 	//обновление для событий
-	if ( ( menuHead->MenuTargetEventsFPS ) && ( _deltaT >= (1000/menuHead->MenuTargetEventsFPS) ) )
+	if ( ( menuHead->MenuTargetEventsFPS ) && ( _deltaTEvents >= (1000/menuHead->MenuTargetEventsFPS) ) )
 	{
-		menuHead->MenuCurrentEventsFrame += _deltaT*menuHead->MenuTargetEventsFPS/1000;
+		menuHead->MenuCurrentEventsFrame += _deltaTEvents*menuHead->MenuTargetEventsFPS/1000;
 		if ( menuHead->MenuCurrentEventsFrame > menuHead->MenuTargetEventsFPS ) menuHead->MenuCurrentEventsFrame = 1;
 		//обновляем события
 		_events = menuHead->ExternalGetEventsFunc();
