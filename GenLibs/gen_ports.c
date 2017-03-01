@@ -31,7 +31,7 @@ uint8_t GenInitPorts(void)
 	             MODE_INPUT_PUPD(4, L) | //PA 4 - Valcoder CW
 	             MODE_INPUT_FLOATING(5, L) | //PA 5 - N/A
 	             MODE_INPUT_FLOATING(6, L) | //PA 6 - N/A
-	             MODE_OUTPUT_PP(7, L, 50) ; //PA 9 - Signal OUT 2 - OUT_PP
+	             MODE_OUTPUT_PP(7, L, 50) ; //PA 7 - Signal OUT 2 - OUT_PP
 	GPIOA->CRH = MODE_OUTPUT_ALT_PP(8, H, 50) | //PA 8 - Signal OUT 3 - TIM1_CH1
 	             MODE_INPUT_FLOATING(9, H) | //PA 9 - N/A
 	             MODE_OUTPUT_ALT_PP(10, H, 50) | //PA 10 - Signal OUT 1 - TIM1_CH3

@@ -26,6 +26,7 @@ uint16_t MenuOKItemID;
 struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
+	unsigned isShowRealFreq : 1;
 	int32_t freqPWM;
 	int32_t freqSignal;
 	int32_t powerK;
@@ -60,10 +61,10 @@ int main(void)
 	
 	//разрешаем доступ к flash MCU
 	if ( FlashAccessEnable() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
-	//чтение настроек из flash
 	
 	//настройка таймеров
-	if ( GenInitTimers() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	if ( GenInitSignalOnTimer1(GenConfig.signalType) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+
 	
 	//инициация дисплея
   if ( DisplayInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
@@ -89,12 +90,12 @@ int main(void)
 	if ( MenuInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 	
 	//запуск ШИМ
-	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.powerK, GenConfig.centerK,
+	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
                GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 	
 	//светодиоды для индикации
 	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
-	if ( GenConfig.signalType == 2 ) LED_GREEN_ON; else LED_GREEN_OFF;
+	if ( GenConfig.signalType == 3 ) LED_GREEN_ON; else LED_GREEN_OFF;
 	
 	while(1)
 	{
@@ -115,6 +116,7 @@ uint8_t InitDefaults(void)
 	{
 		//данные по-умолчанию
 		GenConfig.isImmediateUpdate = defaultUpdateType;
+		GenConfig.isShowRealFreq = defaultShowRealFreqType;
 		GenConfig.freqPWM= defaultFreqPWM;
 		GenConfig.freqSignal = defaultFreqSignal;
 		GenConfig.powerK = defaultPowerK;
@@ -198,7 +200,9 @@ uint8_t MenuInit(void)
 	    //подменю 3 к меню 3
 	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu3_ChangeSignalTypeDraw, Menu3_SubMenu3_ChangeSignalTypeEvents);
 	    //подменю 4 к меню 3
-	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu4_ChangeUpdateTypeDraw, Menu3_SubMenu4_ChangeUpdateTypeEvents);			
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu4_ChangeUpdateTypeDraw, Menu3_SubMenu4_ChangeUpdateTypeEvents);
+	    //подменю 5 к меню 3
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu5_ChangeShowFreqTypeDraw, Menu3_SubMenu5_ChangeShowFreqTypeEvents);			
 	//возврат к основному меню и добавление основного меню 4
 	varIndex = MenuAddNextItem(GenMenu, varIndex, Menu4_SaveMenuDraw, Menu4_SaveMenuEvents);
 	    //подменю 1 к меню 4

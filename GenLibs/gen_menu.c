@@ -22,6 +22,7 @@ extern uint16_t MenuOKItemID;
 extern struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
+	unsigned isShowRealFreq : 1;
 	int32_t freqPWM;
 	int32_t freqSignal;
 	int32_t powerK;
@@ -68,7 +69,7 @@ void LedUpdate(void)
 {
 	//светодиоды для индикации
 	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
-	if ( GenConfig.signalType == 2 ) LED_GREEN_ON; else LED_GREEN_OFF;
+	if ( GenConfig.signalType == 3 ) LED_GREEN_ON; else LED_GREEN_OFF;
 }
 
 void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
@@ -83,6 +84,7 @@ void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
 	  {
 			//данные по-умолчанию
 		  GenConfig.isImmediateUpdate = defaultUpdateType;
+			GenConfig.isShowRealFreq = defaultShowRealFreqType;
 		  GenConfig.freqPWM= defaultFreqPWM;
 		  GenConfig.freqSignal = defaultFreqSignal;
 		  GenConfig.powerK = defaultPowerK;
@@ -200,7 +202,7 @@ uint8_t MenuHiDraw(const uint8_t frameNum)
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Hi!", 7);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Hi!", 8);	
 	//2 строка
 	_copyStringToBufferLtoR(&Line2Buffer[0], "****************", 1);
 	
@@ -208,8 +210,6 @@ uint8_t MenuHiDraw(const uint8_t frameNum)
 	if ( frameNum >= GenMenu->MenuTargetDrawFPS )
 	{
 		menuTransDirection = 2; //влево(+)
-
-		Menu1_StartMenuDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -286,8 +286,6 @@ uint8_t Menu1_StartMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents
 		FreeDataWhenTransition();
 		//уст направление перехода		
 		menuTransDirection = 2; //влево(+)
-
-		Menu2_MainMenuDraw(0);
 		MenuGoToNextItem(GenMenu);
   };
 	
@@ -304,7 +302,7 @@ uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 	  //1 строка
 	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Main config ~", 3);	
 	  //2 строка
-    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter to MAIN config ", 1);
+    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter the MAIN config ", 1);
 		return RESULT_OK;
 	};
 	
@@ -317,7 +315,7 @@ uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 	//2 строка
 	if ( !( frameNum % 25 ) )
 	{
-		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter to MAIN config ", 16, &menu_iteration);
+		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter the MAIN config ", 16, &menu_iteration);
 	};
 	
 	//выводим на дисплей
@@ -335,8 +333,6 @@ uint8_t Menu2_MainMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		FreeDataWhenTransition();
 		//уст направление перехода		
 		menuTransDirection = 2; //влево(+)
-
-		Menu2_SubMenu1_ChangePWMFreqDraw(0);
 		MenuGoToChildItem(GenMenu);
 		
 		//выходим
@@ -350,8 +346,6 @@ uint8_t Menu2_MainMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		FreeDataWhenTransition();
 		//уст направление перехода
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu1_StartMenuDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -362,8 +356,6 @@ uint8_t Menu2_MainMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		FreeDataWhenTransition();
 		//уст направление перехода		
 		menuTransDirection = 2; //влево(+)
-
-		Menu3_ExtraMenuDraw(0);
 		MenuGoToNextItem(GenMenu);
   };
 	
@@ -380,7 +372,7 @@ uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
 	  //1 строка
 	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Extra config ~", 2);	
 	  //2 строка
-    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter to EXTRA config ", 1);
+    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter the EXTRA config ", 1);
 		return RESULT_OK;
 	};
 	
@@ -393,7 +385,7 @@ uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
 	//2 строка
 	if ( !( frameNum % 25 ) )
 	{
-		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter to EXTRA config ", 16, &menu_iteration);
+		MenuTickerDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter the EXTRA config ", 16, &menu_iteration);
 	};
 	
 	//выводим на дисплей
@@ -411,8 +403,6 @@ uint8_t Menu3_ExtraMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents
 		FreeDataWhenTransition();
 		//уст направление перехода		
 		menuTransDirection = 2; //влево(+)
-
-		Menu3_SubMenu1_ChangeDeadTimeDraw(0);
 		MenuGoToChildItem(GenMenu);
 		
 		//выходим
@@ -426,8 +416,6 @@ uint8_t Menu3_ExtraMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents
 		FreeDataWhenTransition();
 		//уст направление перехода
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu2_MainMenuDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -438,8 +426,6 @@ uint8_t Menu3_ExtraMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents
 		FreeDataWhenTransition();
 		//уст направление перехода		
 		menuTransDirection = 2; //влево(+)
-
-		Menu4_SaveMenuDraw(0);
 		MenuGoToNextItem(GenMenu);
   };
 	
@@ -487,8 +473,6 @@ uint8_t Menu4_SaveMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		FreeDataWhenTransition();
 		//уст направление перехода
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu3_ExtraMenuDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -499,8 +483,6 @@ uint8_t Menu4_SaveMenuEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
 		FreeDataWhenTransition();
 		//уст направление перехода
 		menuTransDirection = 2; //влево(+)
-		
-		Menu4_SubMenu1_SaveDialogDraw(0);
 		MenuGoToChildItem(GenMenu);		
 	};
 	
@@ -586,8 +568,6 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqEvents(const uint16_t frameNum, SYS_EVENTS_D
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu2_MainMenuDraw(0);
 		MenuGoToParentItem(GenMenu);
 	};
 	
@@ -596,8 +576,6 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqEvents(const uint16_t frameNum, SYS_EVENTS_D
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu2_SubMenu2_ChangeSignalFreqDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -752,8 +730,6 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqEvents(const uint16_t frameNum, SYS_EVENT
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu2_SubMenu1_ChangePWMFreqDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -762,8 +738,6 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqEvents(const uint16_t frameNum, SYS_EVENT
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu2_SubMenu3_ChangeSignalPowerDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -898,8 +872,6 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu2_SubMenu2_ChangeSignalFreqDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -908,8 +880,6 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu2_SubMenu4_ChangeSignalCenterDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -998,8 +968,6 @@ uint8_t Menu2_SubMenu4_ChangeSignalCenterEvents(const uint16_t frameNum, SYS_EVE
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu2_SubMenu3_ChangeSignalPowerDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -1008,8 +976,6 @@ uint8_t Menu2_SubMenu4_ChangeSignalCenterEvents(const uint16_t frameNum, SYS_EVE
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu2_MainMenuDraw(0);
 		MenuGoToParentItem(GenMenu);
 	};
 	
@@ -1101,8 +1067,6 @@ uint8_t Menu3_SubMenu1_ChangeDeadTimeEvents(const uint16_t frameNum, SYS_EVENTS_
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu3_ExtraMenuDraw(0);
 		MenuGoToParentItem(GenMenu);
 	};
 	
@@ -1111,8 +1075,6 @@ uint8_t Menu3_SubMenu1_ChangeDeadTimeEvents(const uint16_t frameNum, SYS_EVENTS_
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu3_SubMenu2_ChangeMinPulseTimeDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -1204,8 +1166,6 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeEvents(const uint16_t frameNum, SYS_EVE
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu3_SubMenu1_ChangeDeadTimeDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -1214,8 +1174,6 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeEvents(const uint16_t frameNum, SYS_EVE
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu3_SubMenu3_ChangeSignalTypeDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -1246,7 +1204,7 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeEvents(const uint16_t frameNum, SYS_EVE
 	return RESULT_OK;
 }
 
-//Menu3 - SubMenu3 - Change Minimum Pulse Time
+//Menu3 - SubMenu3 - Change Signal Type
 uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
@@ -1258,11 +1216,15 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 	  switch ( GenConfig.signalType )
 		{
 			case 1:
-				_copyStringToBufferLtoR(&Line2BufferNew[0], "Sinus", 6);
+				_copyStringToBufferLtoR(&Line2BufferNew[0], "Sine", 7);
 		  break;
 			
 			case 2:
 				_copyStringToBufferLtoR(&Line2BufferNew[0], "Triangle", 5);
+		  break;
+			
+			case 3:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], "Square", 6);
 		  break;
 	   };
 		return RESULT_OK;
@@ -1278,14 +1240,18 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 	switch ( GenConfig.signalType )
 	{
 		case 1:
-			_copyStringToBufferLtoR(&Line2Buffer[0], "Sinus", 6);
-		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
-		  Line2Buffer[15] = 0xC8;
+			_copyStringToBufferLtoR(&Line2Buffer[0], "Sine", 7);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
 		case 2:
 			_copyStringToBufferLtoR(&Line2Buffer[0], "Triangle", 5);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 13, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		break;
+		
+		case 3:
+			_copyStringToBufferLtoR(&Line2Buffer[0], "Square", 6);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 12, 16, GenMenu->MenuTargetDrawFPS, frameNum);
 		break;
 	};
 	
@@ -1302,8 +1268,6 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENT
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu3_SubMenu2_ChangeMinPulseTimeDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -1312,8 +1276,6 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENT
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu3_SubMenu4_ChangeUpdateTypeDraw(0);
 		MenuGoToNextItem(GenMenu);
 	};
 	
@@ -1330,7 +1292,7 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENT
 	//событие при вращении валкодера по ч стрелке
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
-		if ( ++GenConfig.signalType > 2 ) GenConfig.signalType = 2;
+		if ( ++GenConfig.signalType > 3 ) GenConfig.signalType = 3;
 		if ( GenConfig.isImmediateUpdate )
 			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
                    GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
@@ -1342,7 +1304,7 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENT
 	return RESULT_OK;
 }
 	
-//Menu3 - SubMenu4 - Change Minimum Pulse Time
+//Menu3 - SubMenu4 - Change Update Type
 uint8_t Menu3_SubMenu4_ChangeUpdateTypeDraw(const uint8_t frameNum)
 {
 	if ( frameNum == 0 )
@@ -1391,8 +1353,6 @@ uint8_t Menu3_SubMenu4_ChangeUpdateTypeEvents(const uint16_t frameNum, SYS_EVENT
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu3_SubMenu3_ChangeSignalTypeDraw(0);
 		MenuGoToPrevItem(GenMenu);
 	};
 	
@@ -1401,9 +1361,7 @@ uint8_t Menu3_SubMenu4_ChangeUpdateTypeEvents(const uint16_t frameNum, SYS_EVENT
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		
-		Menu3_ExtraMenuDraw(0);
-		MenuGoToParentItem(GenMenu);
+		MenuGoToNextItem(GenMenu);
 	};	
 	
 	//событие при вращении валкодера против ч стрелки
@@ -1420,6 +1378,83 @@ uint8_t Menu3_SubMenu4_ChangeUpdateTypeEvents(const uint16_t frameNum, SYS_EVENT
 		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
                  GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		LedUpdate();
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu3 - SubMenu5 - Change Show Real Freq Type
+uint8_t Menu3_SubMenu5_ChangeShowFreqTypeDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Show real freq", 2);	
+	  //2 строка
+	  if ( GenConfig.isShowRealFreq )
+	  {
+		  _copyStringToBufferLtoR(&Line2BufferNew[0], "Yes", 7);
+	  } else
+	  {
+		  _copyStringToBufferLtoR(&Line2BufferNew[0], "No", 8);
+	  };
+		return RESULT_OK;
+	};
+	
+	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], "Show real freq", 2);	
+	//2 строка
+	if ( GenConfig.isShowRealFreq )
+	{
+		_copyStringToBufferLtoR(&Line2Buffer[0], "Yes", 7);
+		MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+	} else
+	{
+		_copyStringToBufferLtoR(&Line2Buffer[0], "No", 8);
+		MenuAnimSelectionDraw(&Line2Buffer[0], 7, 7, 10, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+	};
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	return RESULT_OK;
+}
+
+uint8_t Menu3_SubMenu5_ChangeShowFreqTypeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		MenuGoToPrevItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		MenuGoToParentItem(GenMenu);
+	};	
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		GenConfig.isShowRealFreq = 0;
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		GenConfig.isShowRealFreq = 1;
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1468,8 +1503,6 @@ uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum)
 		FreeDataWhenTransition();
 		//уст направление перехода
 		menuTransDirection = 1; //вправо(-)
-		
-		Menu4_SaveMenuDraw(0);
 		MenuGoToParentItem(GenMenu);
 	};	
 	

@@ -47,7 +47,14 @@ uint8_t menuSwitchCurrentItemTo(TREE_MENU *menuHead, TREE_MENU_ITEM *toThisItem)
 	menuHead->MenuDrawClock = 9999999;
 	menuHead->MenuEventsClock = 9999999;
 	//если активирован переход между пукнтами
-	if ( menuHead->MenuTransitionTimeInMS ) menuHead->MenuTransitionState = 1;
+	if ( menuHead->MenuTransitionTimeInMS )
+	{
+		//устанавливаем флаг перехода
+		menuHead->MenuTransitionState = 1;
+		//отрисовываем новый пункт меню с 0 кадров
+		if ( menuHead->MenuCurrentItem->MenuDrawFunc )
+			menuHead->MenuCurrentItem->MenuDrawFunc(0);
+	};
 	//снимаем блокировку
 	menuHead->MenuEditAllow = 1;
 	return 1;
