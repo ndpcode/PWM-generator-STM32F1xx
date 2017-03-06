@@ -8,12 +8,15 @@
 
 #include <stm32f10x.h>
 
+#define buildID "1.05"
+
 #define cpuFreq 72000000UL //частота МК
 #define pi		3.1415926535897932384626433832795 
 #define maxSinSteps 3000 //максимальная длина массива под значения сигнала, maxSinSteps*4 байт < 1/2 от размера RAM
 
 #define defaultUpdateType 0           //по-умолчанию автообновление выкл
 #define defaultShowRealFreqType 0     //по-умолчанию не показываем только реальные частоты, показывается плавная регулировка
+#define defaultLocLanguage 0          //по-умолчанию язык
 #define defaultFreqPWM 25000          //по-умолчанию частота ШИМ
 #define defaultFreqSignal 100         //по-умолчанию частота сигнала
 #define defaultPowerK 10000           //по-умолчанию к-т мощности, div 100
@@ -21,6 +24,10 @@
 #define defaultTransistorsMinTime  50 //по-умолчанию минимальное время открытого транзистора, нс
 #define defaultTransistorsDeadTime 50 //по-умолчанию deadTime для транзисторов, нс
 #define defaultSignalType 1           //по-умолчанию тип сигнала, синус = 1, треугольник = 2, меандр = 3
+
+#define signalSinus 1
+#define signalTriangle 2
+#define signalSquare 3
 
 #define MIN_POWER_K 000000 //минимальное значение коэффициента мощности, %, div 100
 #define MAX_POWER_K 170000 //максимальное значение коэффициента мощности, %, div 100
@@ -45,13 +52,13 @@
 #define CH4_UP GPIOB->BSRR = GPIO_BSRR_BS1
 #define CH4_DOWN GPIOB->BSRR = GPIO_BSRR_BR1
 
-#define CH1_SET GPIOA->CRH &= ~( GPIO_CRH_CNF8 | GPIO_CRH_MODE8 );\
+#define CH3_SET GPIOA->CRH &= ~( GPIO_CRH_CNF8 | GPIO_CRH_MODE8 );\
                 GPIOA->CRH |= ( GPIO_CRH_CNF8_1 | GPIO_CRH_MODE8 )
-#define CH1_RESET GPIOA->CRH &= ~( GPIO_CRH_CNF8 | GPIO_CRH_MODE8 );\
+#define CH3_RESET GPIOA->CRH &= ~( GPIO_CRH_CNF8 | GPIO_CRH_MODE8 );\
                   GPIOA->CRH |= ( GPIO_CRH_CNF8_0 )
-#define CH3_SET GPIOA->CRH &= ~( GPIO_CRH_CNF10 | GPIO_CRH_MODE10 );\
+#define CH1_SET GPIOA->CRH &= ~( GPIO_CRH_CNF10 | GPIO_CRH_MODE10 );\
                 GPIOA->CRH |= ( GPIO_CRH_CNF10_1 | GPIO_CRH_MODE10 )
-#define CH3_RESET GPIOA->CRH &= ~( GPIO_CRH_CNF10 | GPIO_CRH_MODE10 );\
+#define CH1_RESET GPIOA->CRH &= ~( GPIO_CRH_CNF10 | GPIO_CRH_MODE10 );\
                   GPIOA->CRH |= ( GPIO_CRH_CNF10_0 )
 #define CH2_SET GPIOA->CRL &= ~( GPIO_CRL_CNF7 | GPIO_CRL_MODE7 );\
                 GPIOA->CRL |= ( GPIO_CRL_MODE7 )

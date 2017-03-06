@@ -53,6 +53,9 @@ uint8_t Menu3_SubMenu4_ChangeUpdateTypeEvents(const uint16_t frameNum, SYS_EVENT
 //Menu3 - SubMenu5 - Change Show Real Freq Type
 uint8_t Menu3_SubMenu5_ChangeShowFreqTypeDraw(const uint8_t frameNum);
 uint8_t Menu3_SubMenu5_ChangeShowFreqTypeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
+//Menu3 - SubMenu6 - Change Language
+uint8_t Menu3_SubMenu6_ChangeLanguageDraw(const uint8_t frameNum);
+uint8_t Menu3_SubMenu6_ChangeLanguageEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
 
 //Menu4 - SubMenu1 - Save Dialog
 uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum);

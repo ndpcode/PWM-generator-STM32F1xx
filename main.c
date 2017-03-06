@@ -10,6 +10,7 @@
 #include "bsc_controls.h"
 #include "bsc_tree_menu.h"
 #include "gen_menu.h"
+#include "localization.h"
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>
@@ -27,6 +28,7 @@ struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
 	unsigned isShowRealFreq : 1;
+	unsigned languageId : 4;
 	int32_t freqPWM;
 	int32_t freqSignal;
 	int32_t powerK;
@@ -65,6 +67,8 @@ int main(void)
 	//настройка таймеров
 	if ( GenInitSignalOnTimer1(GenConfig.signalType) != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
 
+	//установка языка
+	GenChangeLocalization(GenConfig.languageId);
 	
 	//инициация дисплея
   if ( DisplayInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
@@ -117,6 +121,7 @@ uint8_t InitDefaults(void)
 		//данные по-умолчанию
 		GenConfig.isImmediateUpdate = defaultUpdateType;
 		GenConfig.isShowRealFreq = defaultShowRealFreqType;
+		GenConfig.languageId = defaultLocLanguage;
 		GenConfig.freqPWM= defaultFreqPWM;
 		GenConfig.freqSignal = defaultFreqSignal;
 		GenConfig.powerK = defaultPowerK;
@@ -202,7 +207,9 @@ uint8_t MenuInit(void)
 	    //подменю 4 к меню 3
 	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu4_ChangeUpdateTypeDraw, Menu3_SubMenu4_ChangeUpdateTypeEvents);
 	    //подменю 5 к меню 3
-	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu5_ChangeShowFreqTypeDraw, Menu3_SubMenu5_ChangeShowFreqTypeEvents);			
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu5_ChangeShowFreqTypeDraw, Menu3_SubMenu5_ChangeShowFreqTypeEvents);
+	    //подменю 6 к меню 3
+	    MenuAddNextItem(GenMenu, 0, Menu3_SubMenu6_ChangeLanguageDraw, Menu3_SubMenu6_ChangeLanguageEvents);			
 	//возврат к основному меню и добавление основного меню 4
 	varIndex = MenuAddNextItem(GenMenu, varIndex, Menu4_SaveMenuDraw, Menu4_SaveMenuEvents);
 	    //подменю 1 к меню 4

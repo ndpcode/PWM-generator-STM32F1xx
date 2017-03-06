@@ -449,6 +449,11 @@
               <FileType>1</FileType>
               <FilePath>.\GenLibs\MENU\bsc_anim_ctrls.c</FilePath>
             </File>
+            <File>
+              <FileName>localization.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\GenLibs\localization.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -316,25 +316,69 @@ uint8_t MenuAnimSelectionDraw(char *_buffer, uint8_t _selLength, uint8_t leftBor
 	return 1;
 }
 
-uint8_t MenuTickerDraw(char *_buffer, char *tickerText, uint8_t lineLength, int16_t *iteration)
+//отрисовка плавающей (вправо - влево) строки, если целиком не помещается в поле длиной lineLength
+uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, uint8_t lineLength, int16_t *iteration)
+{
+	uint8_t i = 0;
+	uint8_t floatLength = 0;
+	if ( !_buffer ) return 0;
+	if ( !floatText ) return 0;
+	if ( !startPos ) return 0;
+	if ( !lineLength ) return 0;
+	if ( !iteration ) return 0;	
+	if ( ( strlen(_buffer) - startPos + 1 ) < lineLength ) return 0;
+	
+	floatLength = strlen(floatText);
+	if ( lineLength < floatLength )
+	{
+		if ( ( abs(*iteration) + lineLength ) <= floatLength )
+	  {
+		  for ( i = 0; i < lineLength; i++ )
+		  {
+			  _buffer[startPos - 1 + i] = floatText[i + abs(*iteration)];		
+		  }
+	  };
+	  (*iteration)++;
+    if ( ( abs(*iteration) + lineLength ) > floatLength ) *iteration = -(*iteration - 2);
+  } else
+	{
+		for ( i = 0; i < floatLength; i++ )
+		{
+			_buffer[startPos - 1 + i] = floatText[i];		
+		}
+	};
+
+  return 1;	
+}
+
+//отрисовка бегущей (справа налево) строки, если целиком не помещается в поле длиной lineLength
+uint8_t MenuTickerStrDraw(char *_buffer, char *tickerText, uint8_t startPos, uint8_t lineLength, uint16_t *iteration)
 {
 	uint8_t i = 0;
 	uint8_t tickerLength = 0;
 	if ( !_buffer ) return 0;
 	if ( !tickerText ) return 0;
+	if ( !startPos ) return 0;
 	if ( !lineLength ) return 0;
 	if ( !iteration ) return 0;	
+	if ( ( strlen(_buffer) - startPos + 1 ) < lineLength ) return 0;
 	
 	tickerLength = strlen(tickerText);
-	if ( ( abs(*iteration) + lineLength ) <= tickerLength )
+	if ( lineLength < tickerLength )
 	{
 		for ( i = 0; i < lineLength; i++ )
 		{
-			_buffer[i] = tickerText[i + abs(*iteration)];		
+			_buffer[startPos - 1 + i] = tickerText[ ( i + (*iteration) ) % tickerLength ];		
+		}
+		if ( (*iteration) >= tickerLength ) (*iteration) = 0;
+	  (*iteration)++;
+  } else
+	{
+		for ( i = 0; i < tickerLength; i++ )
+		{
+			_buffer[startPos - 1 + i] = tickerText[i];		
 		}
 	};
-	(*iteration)++;
-  if ( ( abs(*iteration) + lineLength ) > tickerLength ) *iteration = -(*iteration - 2);
 
   return 1;	
 }

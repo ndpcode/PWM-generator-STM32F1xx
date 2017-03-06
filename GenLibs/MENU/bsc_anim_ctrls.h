@@ -33,7 +33,9 @@ uint8_t AnimVarNumberDrawCursor(ANIM_VAR_NUMBER *varNumber);
 uint8_t MenuAnimSelectionDraw(char *_buffer, uint8_t _selLength, uint8_t leftBorder,
 	                         uint8_t rightBorder, uint8_t lineLength, uint8_t frameAll, uint8_t frameNum);
 
-//отрисовка плавающей строки, если целиком не помещается в поле длиной lineLength
-uint8_t MenuTickerDraw(char *_buffer, char *tickerText, uint8_t lineLength, int16_t *iteration);
+//отрисовка плавающей (вправо - влево) строки, если целиком не помещается в поле длиной lineLength
+uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, uint8_t lineLength, int16_t *iteration);
+//отрисовка бегущей (справа налево) строки, если целиком не помещается в поле длиной lineLength
+uint8_t MenuTickerStrDraw(char *_buffer, char *tickerText, uint8_t startPos, uint8_t lineLength, uint16_t *iteration);
 
 #endif
