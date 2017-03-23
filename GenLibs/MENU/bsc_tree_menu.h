@@ -50,7 +50,9 @@ uint8_t MenuGoToPrevItem(TREE_MENU *menuHead);
 uint8_t MenuGoToNextItem(TREE_MENU *menuHead);
 uint8_t MenuGoToParentItem(TREE_MENU *menuHead);
 uint8_t MenuGoToChildItem(TREE_MENU *menuHead);
-uint8_t MenuGoToItemId(TREE_MENU *menuHead, uint16_t MeniItemId);
+uint8_t MenuGoToItemId(TREE_MENU *menuHead, uint16_t MenuItemId);
+uint8_t MenuDeleteItem(TREE_MENU *menuHead, uint16_t MenuItemId);
+TREE_MENU_ITEM *MenuGetItemById(TREE_MENU *menuHead, uint16_t MenuItemId);
 uint8_t MenuUpdate(TREE_MENU *menuHead, uint16_t ClockSecond, uint16_t ClockMillisecond);
 
 #endif

@@ -5,11 +5,18 @@
 #include <string.h>
 #include <limits.h>
 
+#define TIMER_INIT_AS_DMA 1
+#define TIMER_INIT_AS_PWM 2
+
+#define TIMER_CURRENT_A 0
+#define TIMER_CURRENT_B 1
+
+uint16_t timer1Prescaler;
 uint16_t accuracySignalA, accuracySignalB; //точность ШИМ, сколько периодов генератора МК укладывается в период ШИМ
 uint16_t pwmSignalStepsA, pwmSignalStepsB; //число периодов ШИМ в одном полупериоде сигнала
-uint16_t pwmSignalArrayA[maxSinSteps];  //массив А под отсчеты сигнала
-uint16_t pwmSignalArrayB[maxSinSteps];  //массив B под отсчеты сигнала    
-int8_t signalH, signalL;
+uint16_t pwmSignalArrayA[maxSignSteps];  //массив А под отсчеты сигнала
+uint16_t pwmSignalArrayB[maxSignSteps];  //массив B под отсчеты сигнала    
+int8_t signalH;
 
 struct timerEventsBase
 {
@@ -44,6 +51,8 @@ uint8_t Timer1Reset(void)
 	TIM1->DCR = 0x0000;
 	TIM1->DMAR = 0x0000;
 	
+	timer1Prescaler = 0;
+	
 	CH1_DOWN;
 	CH3_DOWN;
 	
@@ -51,8 +60,7 @@ uint8_t Timer1Reset(void)
 }
 
 uint8_t DMA1Reset(void)
-{
-	
+{	
 	DMA1_Channel2->CCR &= 0xFFFFFFFE;
 	DMA1_Channel6->CCR &= 0xFFFFFFFE;
 	NVIC_DisableIRQ(DMA1_Channel2_IRQn);
@@ -119,10 +127,9 @@ uint8_t GenInitTimer1ForSignalEmul(void)
 	GenSetPorts();
 	
 	memset( &timerEvents, 0, sizeof(timerEvents) );
-  memset( pwmSignalArrayA, 0, sizeof(uint16_t) * maxSinSteps );	
-	memset( pwmSignalArrayB, 0, sizeof(uint16_t) * maxSinSteps );
+  memset( pwmSignalArrayA, 0, sizeof(uint16_t) * maxSignSteps );	
+	memset( pwmSignalArrayB, 0, sizeof(uint16_t) * maxSignSteps );
 	signalH = 1;
-	signalL = 0;
 	
 	//вкл Timer1
 	RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
@@ -134,7 +141,7 @@ uint8_t GenInitTimer1ForSignalEmul(void)
   TIM1->CCMR2 = TIM_CCMR2_OC3FE | TIM_CCMR2_OC3PE | TIM_CCMR2_OC3M_1 ;
 	TIM1->DIER |= TIM_DIER_CC1DE | TIM_DIER_CC3DE;
 	TIM1->BDTR = TIM_BDTR_MOE;
-	TIM1->PSC = 0;
+	TIM1->PSC = timer1Prescaler;
 	TIM1->ARR = 1000;
 	TIM1->CCR1 = 0;
 	TIM1->CCR3 = 0;
@@ -160,7 +167,7 @@ uint8_t GenInitTimer1ForSignalEmul(void)
 	DMA1_Channel6->CCR &= 0xFFFFFFFE;
   DMA1_Channel2->CCR |= DMA_CCR2_EN;
 	
-	timerEvents.timerInitType = 1;
+	timerEvents.timerInitType = TIMER_INIT_AS_DMA;
 
   return 1;
 }
@@ -178,14 +185,14 @@ uint8_t GenInitTimer1ForPWM(void)
 	TIM1->CCMR1 = TIM_CCMR1_OC1FE | TIM_CCMR1_OC1PE | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_1;
   TIM1->CCMR2 = TIM_CCMR2_OC3FE | TIM_CCMR2_OC3PE | TIM_CCMR2_OC3M;
 	TIM1->BDTR = TIM_BDTR_MOE;
-	TIM1->PSC = 0;
+	TIM1->PSC = timer1Prescaler;
 	TIM1->ARR = 1000;
 	TIM1->CCR1 = 0;
 	TIM1->CCR3 = 1000;
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CMS;
 	TIM1->CR1 |= TIM_CR1_CEN;
 
-  timerEvents.timerInitType = 2;	
+  timerEvents.timerInitType = TIMER_INIT_AS_PWM;	
 	
   return 1;
 }
@@ -193,9 +200,9 @@ uint8_t GenInitTimer1ForPWM(void)
 uint8_t GenInitSignalOnTimer1(uint8_t _signal_type)
 {
 	//проверка выбора типа сигнала
-	if ( ( _signal_type > 3 ) || ( _signal_type < 1 ) ) return 0;
+	if ( ( _signal_type > signalIndexMax ) || ( _signal_type < signalIndexMin ) ) return 0;
 	
-	if ( _signal_type == 3 )
+	if ( _signal_type == signalSquare )
 	{
 		//инициализация как шим меандр
 		return GenInitTimer1ForPWM();
@@ -208,32 +215,39 @@ uint8_t GenInitSignalOnTimer1(uint8_t _signal_type)
 	return 0;
 }
 
-uint8_t GenTimer1ForPWMUpdate(uint32_t _freq_pwm, double _power_k,
+void GenTimer1SetPrescaler(void) 
+{
+	if ( TIM1->PSC != timer1Prescaler )
+	{
+		TIM1->PSC = timer1Prescaler;
+	}
+}
+
+uint8_t GenTimer1ForPWMUpdate(uint16_t _tim_prescaler, uint16_t _tim_arr, uint16_t _tim_ccr,
                               uint32_t _transistorsMinTimeNS, uint32_t _transistorsDeadTimeNS)
 {
-	uint32_t _psc;
-	uint16_t _arr, _ccr, _ccr3, transistorsMinStep, transistorsMaxStep;
-	if ( !_freq_pwm ) return 0;
+	uint16_t _ccr, _ccr3, transistorsMinStep, transistorsMaxStep;
 	
-	//calc prescaler
-	_psc = cpuFreq / ( 2 * _freq_pwm * 65535 );
-	//calc auto reload reg
-	_arr = (uint32_t) cpuFreq / ( (_psc + 1) * 2 * _freq_pwm );
-	//calc compare reg
-	_ccr = (uint16_t)( (double)_arr * _power_k / 2 );
-	//min time - from NS - to cicles
-	transistorsMinStep = (double)_transistorsMinTimeNS * cpuFreq / ( (_psc + 1) * 2 * 1000000000 );	
-	//dead time - from NS - to cicles
-	transistorsMaxStep = (double)_transistorsDeadTimeNS * cpuFreq / ( (_psc + 1) * 2 * 1000000000 );
-	//control compare reg value
+	//установка предделителя
+	timer1Prescaler = _tim_prescaler;
+	GenTimer1SetPrescaler();
+	//установка регистра сравнения
+	_ccr = _tim_ccr;
+	//min time - NS -> в циклы
+	transistorsMinStep = (double)_transistorsMinTimeNS * cpuFreq / ( (_tim_prescaler + 1) * 2 * 1000000000 );	
+	//dead time - NS -> в циклы
+	transistorsMaxStep = (double)_transistorsDeadTimeNS * cpuFreq / ( (_tim_prescaler + 1) * 2 * 1000000000 );
+	//control compare reg
 	if ( _ccr < transistorsMinStep ) _ccr = transistorsMinStep;
-	if ( ( ( _arr / 2 ) - _ccr) < transistorsMaxStep ) _ccr = ( _arr / 2 ) - transistorsMaxStep;
-	_ccr3 = _arr - _ccr;
-	//ctrl reg
+	if ( ( ( ( _tim_arr / 2 ) - _ccr) < transistorsMaxStep ) || ( _ccr > ( _tim_arr / 2 ) ) )
+	{
+		_ccr = ( _tim_arr / 2 ) - transistorsMaxStep;
+	}
+	_ccr3 = _tim_arr - _ccr;
+	//обновление регистра управления
 	TIM1->CR1 |= TIM_CR1_ARPE | TIM_CR1_CMS;
-	// clear and set
-	TIM1->PSC = _psc;
-	TIM1->ARR = _arr;
+	//сброс и установка
+	TIM1->ARR = _tim_arr;
 	TIM1->CCR1 = _ccr;
 	TIM1->CCR3 = _ccr3;
 	
@@ -338,48 +352,50 @@ void calculateDataArray(uint16_t *_signal_array, uint16_t _arr_size, uint16_t _a
 	}		
 };
 
-//________________startSignal____________________
-uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k, double _center_k,
-                     uint32_t _transistorsMinTimeNS, uint32_t _transistorsDeadTimeNS, uint8_t _signal_type)
+uint8_t GenUpdateSignal(const uint16_t _tim_prescaler, const uint16_t _tim_arr, const uint16_t _tim_steps_ccr,
+	                      const double _power_k, const double _center_k, const uint32_t _transistorsMinTimeNS,
+												const uint32_t _transistorsDeadTimeNS, const uint8_t _signal_type)
 {
-	//проверка коэффиицента мощности
-	if ( ( _power_k > MAX_POWER_K ) || ( _power_k < MIN_POWER_K ) ) return 0;
 	//проверка выбора типа сигнала
-	if ( ( _signal_type > 3 ) || ( _signal_type < 1 ) ) return 0;
+	if ( ( _signal_type > signalIndexMax ) || ( _signal_type < signalIndexMin ) ) return 0;
 	
 	//обработка при сигнале = 3 (меандр)
-	if ( _signal_type == 3 )
+	if ( _signal_type == signalSquare )
 	{
 		//проверка подходящего режима таймера и включение
-		if ( timerEvents.timerInitType != 2 )
+		if ( timerEvents.timerInitType != TIMER_INIT_AS_PWM )
 		{
-			if ( !GenInitSignalOnTimer1(3) ) return 0; 
+			if ( !GenInitSignalOnTimer1(signalSquare) ) return 0; 
 		};
-		return GenTimer1ForPWMUpdate(_freq_pwm, _power_k/100, _transistorsMinTimeNS, _transistorsDeadTimeNS);
+		return GenTimer1ForPWMUpdate(_tim_prescaler, _tim_arr, _tim_steps_ccr, _transistorsMinTimeNS, _transistorsDeadTimeNS);
 	};
 	
+	//проверка размера сигнала относительно размера буфера
+	if ( _tim_steps_ccr > maxSignSteps ) return 0;	
+	//проверка коэффиицента мощности
+	if ( ( _power_k > MAX_POWER_K ) || ( _power_k < MIN_POWER_K ) ) return 0;
+	
 	//проверка подходящего режима таймера и включение
-	if ( timerEvents.timerInitType != 1 )
+	if ( timerEvents.timerInitType != TIMER_INIT_AS_DMA )
 	{
 		if ( !GenInitSignalOnTimer1(_signal_type) ) return 0; 
 	};
 	
-	//проверка частот
-	if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
-	
 	//принудительно убираем флаг
 	timerEvents.mayChangeArray = 0;
+	//устанавливаем предделитель
+	timer1Prescaler = _tim_prescaler;
 	//выбор массива и заполнение
-	if ( !timerEvents.currentArray ) //если текущий буфер - А
+	if ( timerEvents.currentArray == TIMER_CURRENT_A ) //если текущий буфер - А
 	{
-		accuracySignalB = cpuFreq / ( _freq_pwm );
-		pwmSignalStepsB = _freq_pwm / ( 2*_freq_signal );
+		accuracySignalB = _tim_arr;
+		pwmSignalStepsB = _tim_steps_ccr;
 		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k/100, _center_k,
 		                   _transistorsMinTimeNS, _transistorsDeadTimeNS, _signal_type);
 	} else
 	{ //теущий буфер - B
-		accuracySignalA = cpuFreq / ( _freq_pwm );
-		pwmSignalStepsA = _freq_pwm / ( 2*_freq_signal );
+		accuracySignalA = _tim_arr;
+		pwmSignalStepsA = _tim_steps_ccr;
 		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k/100, _center_k,
 		                   _transistorsMinTimeNS, _transistorsDeadTimeNS, _signal_type);
 	};				
@@ -390,53 +406,44 @@ uint8_t UpdateSignal(uint32_t _freq_pwm, uint32_t _freq_signal, double _power_k,
 	return 1;
 };
 
-uint8_t FrequencyCheck(uint32_t _freq_pwm, uint32_t _freq_signal)
-{
-	//проверка возможности установить выбранные частоты
-	//проверка на переполнение uint16_t
-	if ( ( (uint32_t)cpuFreq / _freq_pwm ) > USHRT_MAX ) return 0;
-	//проверка на минимум "разрешения"(точности) сигнала
-	if ( ( (uint32_t)cpuFreq / _freq_pwm ) < 2 ) return 0;
-	//проверка на переполнение массива
-	if ( ( _freq_pwm / ( 2*_freq_signal ) ) > maxSinSteps ) return 0;
-	//проверка на минимум значений в массиве
-	if ( ( _freq_pwm / ( 2*_freq_signal ) ) < 3 ) return 0;
-	//иначе возвращаем 1
-	return 1;
-}
-
 void DMA_Interrupt_Change_Signal(void)
 {
 	//принудительно выкл DMA
 	DMA1_Channel2->CCR &= 0xFFFFFFFE;
 	DMA1_Channel6->CCR &= 0xFFFFFFFE;
 	//измен буфер
-	if ( !timerEvents.currentArray ) //текущий буфер - А
+	if ( timerEvents.currentArray == TIMER_CURRENT_A ) //текущий буфер - А
 	{
 		DMA1_Channel2->CMAR = (uint32_t) &pwmSignalArrayB[0];
 		DMA1_Channel6->CMAR = (uint32_t) &pwmSignalArrayB[0];
 	  DMA1_Channel2->CNDTR = pwmSignalStepsB;
 	  DMA1_Channel6->CNDTR = pwmSignalStepsB;
+	  //check prescaler
+	  GenTimer1SetPrescaler();
+		//set registers
 		TIM1->CR1 |= TIM_CR1_ARPE;
 	  TIM1->ARR = accuracySignalB;
 	  TIM1->CCR1 = 0;
 	  TIM1->CCR3 = 0;
 		//переключение флага на B
-		timerEvents.currentArray = 1;
+		timerEvents.currentArray = TIMER_CURRENT_B;
     timerEvents.signalEnabled = 1;		
-	} else
+	} else 
 	{
 		//текущий буфер - B
 		DMA1_Channel2->CMAR = (uint32_t) &pwmSignalArrayA[0];
 	  DMA1_Channel6->CMAR = (uint32_t) &pwmSignalArrayA[0];
 	  DMA1_Channel2->CNDTR = pwmSignalStepsA;
 	  DMA1_Channel6->CNDTR = pwmSignalStepsA;
+	  //check prescaler
+	  GenTimer1SetPrescaler();
+		//set registers
 		TIM1->CR1 |= TIM_CR1_ARPE;
 	  TIM1->ARR = accuracySignalA;
 	  TIM1->CCR1 = 0;
 	  TIM1->CCR3 = 0;
 		//переключение флага на A
-		timerEvents.currentArray = 0;
+		timerEvents.currentArray = TIMER_CURRENT_A;
 		timerEvents.signalEnabled = 1;
 	};
 	// выкл
@@ -488,65 +495,239 @@ void DMA1_Channel6_IRQHandler(void)
   DMA_Interrupt_Change_Period();
 };
 
-uint32_t GetRealAvailablePWMFreq(uint32_t _freq_pwm, uint32_t _freq_signal)
+uint8_t GenCheckSignalConfig(const int32_t _tim_prescaler, const int32_t _tim_arr, const int32_t _tim_steps_ccr,
+	                           const double _power_k, const double _center_k, const uint32_t _transistorsMinTimeNS,
+												     const uint32_t _transistorsDeadTimeNS, const uint8_t _signal_type)
 {
-  if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
-
-  return cpuFreq / (uint32_t)( cpuFreq / _freq_pwm );	
+	uint16_t transistorsMinStep, transistorsMaxStep;
+	
+	if ( ( _tim_prescaler < 0 ) || ( _tim_prescaler >= USHRT_MAX ) ) return 0;
+	if ( ( _tim_arr < 0 ) || ( _tim_arr > USHRT_MAX ) ) return 0;
+	if ( ( _tim_steps_ccr < 0 ) || ( _tim_steps_ccr > USHRT_MAX ) ) return 0;
+	if ( ( _transistorsMinTimeNS < MIN_PULSE_TIME ) || ( _transistorsMinTimeNS > MAX_PULSE_TIME ) ) return 0;
+	if ( ( _transistorsDeadTimeNS < MIN_DEAD_TIME ) || ( _transistorsDeadTimeNS > MAX_DEAD_TIME ) ) return 0;
+	
+	//min time - NS -> в циклы
+	transistorsMinStep = (double)_transistorsMinTimeNS * cpuFreq / ( (_tim_prescaler + 1) * 2 * 1000000000 );	
+	//dead time - NS -> в циклы
+	transistorsMaxStep = (double)_transistorsDeadTimeNS * cpuFreq / ( (_tim_prescaler + 1) * 2 * 1000000000 );
+  if ( ( _signal_type == signalSquare ) && ( _tim_steps_ccr > ( ( _tim_arr / 2 ) - transistorsMaxStep ) ) ) return 0;
+	if ( ( _signal_type == signalSquare ) && ( _tim_steps_ccr < transistorsMinStep ) ) return 0;
+	if ( _tim_arr < 2 ) return 0;
+	if ( ( ( _tim_steps_ccr < 2 ) || ( _tim_steps_ccr > maxSignSteps ) ) &&
+		   ( ( _signal_type == signalSinus ) || ( _signal_type == signalTriangle ) ) ) return 0;
+	if ( ( _power_k < MIN_POWER_K ) || ( _power_k > MAX_POWER_K ) ) return 0;
+	if ( ( _center_k < MIN_CENTER_K ) || ( _center_k > MAX_CENTER_K ) ) return 0;
+	if ( ( _signal_type < signalIndexMin ) || ( _signal_type > signalIndexMax ) ) return 0;
+		
+	return 1;
 }
 
-uint32_t GetNextAvailablePWMFreq(uint32_t _freq_pwm, uint32_t _freq_signal)
+uint16_t GenGetPrescalerValue(const double _freq_pwm, const uint8_t _signal_type)
 {
-	uint32_t _new_freq = 0;
-  if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
+	uint16_t _prescaler_value = 0;
+	if ( _freq_pwm == 0.0 ) return USHRT_MAX;
+	if ( _signal_type == signalSquare )
+	{
+		_prescaler_value = (uint16_t)( (double)cpuFreq / ( (double)_freq_pwm * 131070 ) );		
+	}
+	if ( ( _signal_type == signalSinus ) || ( _signal_type == signalTriangle ) )
+	{
+		_prescaler_value = (uint16_t)( (double)cpuFreq / ( (double)_freq_pwm * 65535 ) );
+	}
+	return _prescaler_value;
+}
+
+uint16_t GenGetARRValueFromFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const uint8_t _signal_type)
+{
+	uint16_t _arr_value = 0;
+	if ( _freq_pwm == 0.0 ) return 0;
+	if ( _tim_prescaler == USHRT_MAX ) return 0;
+	if ( _signal_type == signalSquare )
+	{
+		_arr_value = (uint16_t)( (double)cpuFreq / ( (double)(_tim_prescaler + 1) * 2 * _freq_pwm ) );		
+	}
+	if ( ( _signal_type == signalSinus ) || ( _signal_type == signalTriangle ) )
+	{
+		_arr_value = (uint16_t)( (double)cpuFreq / ( (double)(_tim_prescaler + 1) * _freq_pwm ) );
+	}	
+	if ( _arr_value < 2 ) _arr_value = 0;
+	return _arr_value;
+}
+
+uint16_t GenGetStepsCCRValueFromFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal,
+	                                   const uint16_t _tim_arr, const double _power_k, const uint32_t _transistorsMinTimeNS,
+																		 const uint32_t _transistorsDeadTimeNS, const uint8_t _signal_type)
+{
+	uint16_t transistorsMinStep, transistorsMaxStep;
+		
+	uint16_t _steps_value = 0;
+	if ( !_tim_arr ) return 0;
+	if ( _freq_pwm == 0.0 ) return 0;
+	if ( _freq_signal == 0.0 ) return 0;
+	if ( _signal_type == signalSquare )
+	{
+		_steps_value = (uint16_t)( (double)_tim_arr * _power_k / 2 );
+		//min time - NS -> в циклы
+	  transistorsMinStep = (double)_transistorsMinTimeNS * cpuFreq / ( (_tim_prescaler + 1) * 2 * 1000000000 );	
+	  //dead time - NS -> в циклы
+	  transistorsMaxStep = (double)_transistorsDeadTimeNS * cpuFreq / ( (_tim_prescaler + 1) * 2 * 1000000000 );
+	  if ( _steps_value < transistorsMinStep ) _steps_value = transistorsMinStep;
+	  if ( ( ( ( _tim_arr / 2 ) - _steps_value) < transistorsMaxStep ) || ( _steps_value > ( _tim_arr / 2 ) ) )
+	  {
+		  _steps_value = ( _tim_arr / 2 ) - transistorsMaxStep;
+	  }	
+	}
+	if ( ( _signal_type == signalSinus ) || ( _signal_type == signalTriangle ) )
+	{
+		_steps_value = (uint16_t)( _freq_pwm / ( 2.0 * _freq_signal ) );
+	  if ( _steps_value < 2 ) return 0;
+	  if ( _steps_value > maxSignSteps ) return 0;
+	}
+	return _steps_value;
+}
+
+double GenGetPWMFreqValueFromTimer(const uint16_t _tim_prescaler, const uint16_t _tim_arr, const uint8_t _signal_type)
+{
+  if ( !GenCheckSignalConfig(_tim_prescaler, _tim_arr, 0, MIN_POWER_K,
+		                         MIN_CENTER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type) ) return 0;
 	
-	_new_freq = cpuFreq / _freq_pwm - 1;
-	if ( !_new_freq ) _new_freq = 1;
-	_new_freq = cpuFreq / _new_freq;
-	if ( !FrequencyCheck(_new_freq, _freq_signal) ) _new_freq = _freq_pwm;
+	if ( _signal_type == signalSquare )
+	{
+		return ( (double)cpuFreq / ( (double)(_tim_prescaler + 1) * 2 * _tim_arr ) );
+	}
+	if ( ( _signal_type == signalSinus ) || ( _signal_type == signalTriangle ) )
+	{
+		return ( (double)cpuFreq / ( (double)(_tim_prescaler + 1) * _tim_arr ) );
+	}
+	return -1;
+}
+
+double GenGetSignalFreqValueFromTimer(const uint16_t _tim_prescaler, const uint16_t _tim_arr, const uint16_t _tim_steps_ccr, const uint8_t _signal_type)
+{
+  if ( !GenCheckSignalConfig(_tim_prescaler, _tim_arr, _tim_steps_ccr, MIN_POWER_K,
+		                         MIN_CENTER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type) ) return 0;
+	
+	if ( _signal_type == signalSquare )
+	{
+		return ( (double)cpuFreq / ( (double)(_tim_prescaler + 1) * 2 * _tim_arr ) );
+	}
+	if ( ( _signal_type == signalSinus ) || ( _signal_type == signalTriangle ) )
+	{
+		return ( (double)cpuFreq / ( (double)(_tim_prescaler + 1) * _tim_arr * 2.0 * _tim_steps_ccr ) );
+	}
+	return -1;
+}
+
+uint8_t GenCheckFrequencyAvailable(const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
+{
+	uint32_t a = 0, b = 0, c = 0;
+	a = GenGetPrescalerValue(_freq_pwm, _signal_type);
+	b = GenGetARRValueFromFreq(a, _freq_pwm, _signal_type);
+	c = GenGetStepsCCRValueFromFreq(a, _freq_pwm, _freq_signal, b, MIN_POWER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type);
+	c = b && ( ( ( _signal_type == signalSquare ) && ( c <= ( b / 2 ) ) ) || ( ( _signal_type != signalSquare ) && c ) );
+	return (uint8_t)( ( a != USHRT_MAX ) && c );
+}
+
+double GetRealAvailablePWMFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
+{
+	double _new_freq = 0;
+  if ( !GenCheckFrequencyAvailable(_freq_pwm, _freq_signal, _signal_type) ) return 0;
+	
+	_new_freq = GenGetARRValueFromFreq(_tim_prescaler, _freq_pwm, _signal_type);
+	_new_freq = GenGetPWMFreqValueFromTimer(_tim_prescaler, _new_freq, _signal_type);
+	if ( _new_freq <= 0.0 )
+	{
+		return _freq_pwm;
+	} else
+	{
+		return _new_freq;
+	}
+}
+double GetNextAvailablePWMFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
+{
+	double _new_freq = 0;
+  if ( !GenCheckFrequencyAvailable(_freq_pwm, _freq_signal, _signal_type) ) return 0;
+	
+	_new_freq = GenGetARRValueFromFreq(_tim_prescaler, _freq_pwm, _signal_type);
+	_new_freq--;
+	_new_freq = GenGetPWMFreqValueFromTimer(_tim_prescaler, _new_freq, _signal_type);
+	if ( _new_freq <= 0.0 )
+	{
+		return _freq_pwm;
+	} else
+	{
+		return _new_freq;
+	}
+}
+
+double GetPrevAvailablePWMFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
+{
+	double _new_freq = 0;
+  if ( !GenCheckFrequencyAvailable(_freq_pwm, _freq_signal, _signal_type) ) return 0;
+	
+	_new_freq = GenGetARRValueFromFreq(_tim_prescaler, _freq_pwm, _signal_type);
+	_new_freq++;
+	if ( _new_freq > USHRT_MAX ) return _freq_pwm;
+	_new_freq = GenGetPWMFreqValueFromTimer(_tim_prescaler, _new_freq, _signal_type);
+	if ( _new_freq <= 0.0 )
+	{
+		return _freq_pwm;
+	} else
+	{
+		return _new_freq;
+	}
+}
+
+double GetRealAvailableSignalFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
+{
+	double _new_freq = 0;
+	uint16_t _arr = 0;
+  if ( !GenCheckFrequencyAvailable(_freq_pwm, _freq_signal, _signal_type) ) return 0;
+	if ( _signal_type == signalSquare ) return 0;
+	
+	_arr = GenGetARRValueFromFreq(_tim_prescaler, _freq_pwm, _signal_type);
+	_new_freq = GenGetStepsCCRValueFromFreq(_tim_prescaler, _freq_pwm, _freq_signal, _arr, MIN_POWER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type);
+	_new_freq = GenGetSignalFreqValueFromTimer(_tim_prescaler, _arr, _new_freq, _signal_type); 
 	return _new_freq;
 }
 
-uint32_t GetPrevAvailablePWMFreq(uint32_t _freq_pwm, uint32_t _freq_signal)
+double GetNextAvailableSignalFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
 {
-	uint32_t _new_freq = 0;
-  if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
+	double _new_freq = 0;
+	uint16_t _arr = 0;
+  if ( !GenCheckFrequencyAvailable(_freq_pwm, _freq_signal, _signal_type) ) return 0;
+	if ( _signal_type == signalSquare ) return 0;
 	
-	_new_freq = cpuFreq / _freq_pwm + 1;
-	_new_freq = cpuFreq / _new_freq;
-	if ( !FrequencyCheck(_new_freq, _freq_signal) ) _new_freq = _freq_pwm;
-	return _new_freq;
+	_arr = GenGetARRValueFromFreq(_tim_prescaler, _freq_pwm, _signal_type);
+	_new_freq = GenGetStepsCCRValueFromFreq(_tim_prescaler, _freq_pwm, _freq_signal, _arr, MIN_POWER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type);
+	_new_freq--;
+	_new_freq = GenGetSignalFreqValueFromTimer(_tim_prescaler, _arr, _new_freq, _signal_type);
+  if ( _new_freq <= 0.0 )
+	{
+		return _freq_signal;
+	} else
+  {
+		return _new_freq;
+	}
 }
 
-uint32_t GetRealAvailableSignalFreq(uint32_t _freq_pwm, uint32_t _freq_signal)
+double GetPrevAvailableSignalFreq(const uint16_t _tim_prescaler, const double _freq_pwm, const double _freq_signal, const uint8_t _signal_type)
 {
-	uint32_t _new_freq = 0;
-	if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
+	double _new_freq = 0;
+	uint16_t _arr = 0;
+  if ( !GenCheckFrequencyAvailable(_freq_pwm, _freq_signal, _signal_type) ) return 0;
+	if ( _signal_type == signalSquare ) return 0;
 	
-	_new_freq = _freq_pwm / ( 2 * _freq_signal );
-	if ( !_new_freq ) return 0;
-	return _freq_pwm / ( 2 * _new_freq );
-}
-
-uint32_t GetPrevAvailableSignalFreq(uint32_t _freq_pwm, uint32_t _freq_signal)
-{
-	uint32_t _new_freq = 0;
-	if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
-	
-	_new_freq = _freq_pwm / ( 2 * _freq_signal ) + 1;
-	_new_freq = _freq_pwm / ( 2 * _new_freq );
-	if ( !FrequencyCheck(_freq_pwm, _new_freq) ) _new_freq = _freq_signal;	
-	return _new_freq;
-}
-
-uint32_t GetNextAvailableSignalFreq(uint32_t _freq_pwm, uint32_t _freq_signal)
-{
-	uint32_t _new_freq = 0;
-	if ( !FrequencyCheck(_freq_pwm, _freq_signal) ) return 0;
-	
-	_new_freq = _freq_pwm / ( 2 * _freq_signal ) - 1;
-	if ( !_new_freq ) _new_freq = 1;
-	_new_freq = _freq_pwm / ( 2 * _new_freq );
-	if ( !FrequencyCheck(_freq_pwm, _new_freq) ) _new_freq = _freq_signal;	
-	return _new_freq;
+	_arr = GenGetARRValueFromFreq(_tim_prescaler, _freq_pwm, _signal_type);
+	_new_freq = GenGetStepsCCRValueFromFreq(_tim_prescaler, _freq_pwm, _freq_signal, _arr, MIN_POWER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type);
+	_new_freq++;
+	_new_freq = GenGetSignalFreqValueFromTimer(_tim_prescaler, _arr, _new_freq, _signal_type);
+  if ( _new_freq <= 0.0 )
+	{
+		return _freq_signal;
+	} else
+  {
+		return _new_freq;
+	}
 }

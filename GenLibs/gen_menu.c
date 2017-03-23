@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 
 //значения дельты приращения частот при повороте ручки валкодера
 #define DeltaValMinValue 1
@@ -20,23 +21,27 @@
 extern HD44780_DISPLAY_STRUCT Display;
 extern TREE_MENU *GenMenu;
 extern uint16_t MenuOKItemID;
+extern uint16_t Menu2ItemID;
 extern char **locLanguageData;
 extern struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
-	unsigned isShowRealFreq : 1;
+	unsigned ShowFreqType : 3;
 	unsigned languageId : 4;
-	int32_t freqPWM;
-	int32_t freqSignal;
+	uint8_t signalType;
+	double freqPWM;
+	double freqSignal;
 	int32_t powerK;
 	int32_t centerK;
 	int32_t pwmMinPulseLengthInNS;
 	int32_t pwmDeadTimeInNS;
-	uint8_t signalType;
+	uint16_t timerPrescaler;
+	uint16_t timerARR;
+	uint16_t timerStepsCCR;
 } GenConfig;
 
-char Line1Buffer[17] = "                 ";
-char Line2Buffer[17] = "                 ";
+char Line1Buffer[17] = "                ";
+char Line2Buffer[17] = "                ";
 
 ANIM_VAR_NUMBER *valMain;
 ANIM_VAR_NUMBER *valIncSize;
@@ -53,11 +58,62 @@ int32_t bufferVal = 0;
 int32_t bufferVarK = 0;
 double bufferValDouble = 0;
 int16_t menu_iteration_int1 = 0;
+int16_t menu_iteration_int2 = 0;
 uint16_t menu_iteration_uint1 = 0;
 uint16_t menu_iteration_uint2 = 0;
+int32_t menu_int32 = 0;
 char Line1BufferNew[17] = "                ";
 char Line2BufferNew[17] = "                ";
 uint16_t LastMenuItemID = 0;
+
+//*****************************************************************************************************************************//
+//*****************************************************************************************************************************//
+// additional
+//*****************************************************************************************************************************//
+//*****************************************************************************************************************************//
+
+void GenChangeMenu(void)
+{
+	//find and delete
+	TREE_MENU_ITEM *_menu_item = MenuGetItemById(GenMenu, Menu2ItemID);
+	if ( !_menu_item ) return;
+	if ( !_menu_item->MenuChild ) return;
+	MenuDeleteItem(GenMenu, ((TREE_MENU_ITEM*)_menu_item->MenuChild)->MenuItemId);
+	//create new
+	if ( ( GenConfig.ShowFreqType == ShowFreqTypeNormal ) || ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq ) )
+	{
+		//подменю 1 к меню 2
+    MenuAddSubItem(GenMenu, Menu2ItemID, Menu2_SubMenu1_ChangePWMFreqDraw, Menu2_SubMenu1_ChangePWMFreqEvents);
+		if ( GenConfig.signalType != signalSquare )
+		{
+			//подменю 2 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu2_ChangeSignalFreqDraw, Menu2_SubMenu2_ChangeSignalFreqEvents);
+		}
+	  //подменю 3 к меню 2
+	  MenuAddNextItem(GenMenu, 0, Menu2_SubMenu3_ChangeSignalPowerDraw, Menu2_SubMenu3_ChangeSignalPowerEvents);
+		if ( GenConfig.signalType != signalSquare )
+		{
+			//подменю 4 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu4_ChangeSignalCenterDraw, Menu2_SubMenu4_ChangeSignalCenterEvents);			
+		}
+	}
+	if ( GenConfig.ShowFreqType == ShowFreqTypeDirectControl )
+	{
+		//подменю 1 к меню 2
+    MenuAddSubItem(GenMenu, Menu2ItemID, Menu2_SubMenu1_Alt_ChangePrescalerDraw, Menu2_SubMenu1_Alt_ChangePrescalerEvents);
+	  //подменю 2 к меню 2
+	  MenuAddNextItem(GenMenu, 0, Menu2_SubMenu2_Alt_ChangeARRDraw, Menu2_SubMenu2_Alt_ChangeARREvents);
+	  //подменю 3 к меню 2
+	  MenuAddNextItem(GenMenu, 0, Menu2_SubMenu3_Alt_ChangeStepsCCRDraw, Menu2_SubMenu3_Alt_ChangeStepsCCREvents);
+		if ( GenConfig.signalType != signalSquare )
+		{
+			//подменю 4 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu3_ChangeSignalPowerDraw, Menu2_SubMenu3_ChangeSignalPowerEvents);	
+			//подменю 5 к меню 2
+	    MenuAddNextItem(GenMenu, 0, Menu2_SubMenu4_ChangeSignalCenterDraw, Menu2_SubMenu4_ChangeSignalCenterEvents);			
+		}
+	}
+}
 
 void FreeDataWhenTransition(void)
 {
@@ -68,15 +124,17 @@ void FreeDataWhenTransition(void)
 	bufferVal = 0;
 	bufferVarK = 0;
   menu_iteration_int1 = 0;
+  menu_iteration_int2 = 0;
   menu_iteration_uint1 = 0;
   menu_iteration_uint2 = 0;
+	menu_int32 = 0;
 }
 
 void LedUpdate(void)
 {
 	//светодиоды для индикации
 	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
-	if ( GenConfig.signalType == 3 ) LED_GREEN_ON; else LED_GREEN_OFF;
+	if ( GenConfig.ShowFreqType == ShowFreqTypeDirectControl ) LED_GREEN_ON; else LED_GREEN_OFF;
 }
 
 void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
@@ -87,12 +145,12 @@ void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
 		memset(&GenConfig, 0, sizeof(GenConfig));
 		FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
 	  //проверка наличия сохраненных данных
-	  if ( GenConfig.freqPWM == 0xFFFFFFFF )
+	  if ( GenConfig.freqPWM == 0xFFFFFFFFFFFFFFFF )
 	  {
-			//данные по-умолчанию
+		  //данные по-умолчанию
 		  GenConfig.isImmediateUpdate = defaultUpdateType;
-			GenConfig.isShowRealFreq = defaultShowRealFreqType;
-			GenConfig.languageId = defaultLocLanguage;
+		  GenConfig.ShowFreqType = defaultShowFreqType;
+		  GenConfig.languageId = defaultLocLanguage;
 		  GenConfig.freqPWM= defaultFreqPWM;
 		  GenConfig.freqSignal = defaultFreqSignal;
 		  GenConfig.powerK = defaultPowerK;
@@ -100,14 +158,24 @@ void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
 		  GenConfig.pwmMinPulseLengthInNS = defaultTransistorsMinTime;
 		  GenConfig.pwmDeadTimeInNS = defaultTransistorsDeadTime;
 		  GenConfig.signalType = defaultSignalType;
+		  GenConfig.timerPrescaler = defaultTimerPrescaler;
+		  GenConfig.timerARR = defaultTimerARR;
+		  GenConfig.timerStepsCCR = defaultTimerStepsCCR;
 	  };
 	}
 	
 	if ( genEvents & EVENT_BUTTON2_CLICK )
 	{
-		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                 GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-		
+	  if ( GenConfig.ShowFreqType != ShowFreqTypeDirectControl )
+	  {
+		  GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
+	    GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
+	    GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
+                                                            GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+		                                                        GenConfig.signalType);
+	  }
+		GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 100,
+		                (double)GenConfig.centerK / 100, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		LastMenuItemID = GenMenu->MenuCurrentItem->MenuItemId;
 		GenMenu->MenuTransitionTimeInMS = 0;
 		MenuGoToItemId(GenMenu, MenuOKItemID);
@@ -124,6 +192,26 @@ void _clearDisplayBuffers(void)
 	}
 	Line1Buffer[16] = 0;
   Line2Buffer[16] = 0;
+}
+
+void _clearDisplayBuffer1(void)
+{
+	uint8_t i;
+	for ( i = 0; i < 16; i++ )
+	{
+		Line1Buffer[i] = ' ';
+	}
+	Line1Buffer[16] = 0;
+}
+
+void _clearDisplayBuffer2(void)
+{
+	uint8_t i;
+	for ( i = 0; i < 16; i++ )
+	{
+		Line2Buffer[i] = ' ';
+	}
+	Line2Buffer[16] = 0;
 }
 
 void _clearDisplayNewBuffers(void)
@@ -166,11 +254,67 @@ uint8_t GetCenterPos(char *_string)
 	return ( ( 16 - strlen(_string) ) / 2 + 1);
 }
 
+void GetFormattedDouble(const double _x, uint8_t _length, char *_buffer, uint8_t _bufferLength)
+{
+	uint8_t _a = 0;
+	if ( !_length ) return;
+	if ( !_buffer ) return;
+	if ( _length > _bufferLength ) return;
+	snprintf(_buffer, _bufferLength, "%d", (int32_t)_x);
+	_a = strlen(_buffer);
+	if ( _a > ( _length - 1 ) )
+	{
+		snprintf(_buffer, _bufferLength, "*");
+		return;
+	}
+	_a = _length - _a - 1;
+	snprintf(_buffer, _bufferLength, "%*.*lf", _length, _a, _x);
+}
+
+void MenuTimerUpdate(void)
+{
+	if ( GenConfig.ShowFreqType != ShowFreqTypeDirectControl )
+	{
+		GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
+	  GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
+	  GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
+                                                          GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+		                                                      GenConfig.signalType);;
+	}
+	if ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq )
+	{
+	  GenConfig.freqPWM = GenGetPWMFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.signalType);
+		GenConfig.freqSignal = GenGetSignalFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, GenConfig.signalType);
+	}
+	if ( GenConfig.isImmediateUpdate )
+	{
+	  GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 100,
+		                (double)GenConfig.centerK / 100, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	}	
+}
+
+void MenuResetSignalVal(void)
+{
+	GenConfig.freqPWM = defaultFreqPWM;
+	GenConfig.freqSignal = defaultFreqSignal;
+	GenConfig.powerK = defaultPowerK;
+	GenConfig.centerK = defaultSignalCenter;
+	GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
+	GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
+	GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
+                                                        GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+		                                                    GenConfig.signalType);
+}
+
+//*****************************************************************************************************************************//
+//*****************************************************************************************************************************//
+// main
+//*****************************************************************************************************************************//
+//*****************************************************************************************************************************//
 
 void MenuTransitionDraw(const uint16_t frameNum)
 {	
 	uint8_t i = 0;
-	//_clearDisplayBuffers();
 	
 	if ( (frameNum % 2) != 0 ) return;
 	
@@ -276,11 +420,11 @@ uint8_t Menu1_StartMenuDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		MenuTickerStrDraw(&Line1BufferNew[0], locLanguageData[3], 1, 8, &menu_iteration_uint1);
-	  snprintf(displayString, 17, "%d", GetRealAvailablePWMFreq(GenConfig.freqPWM, GenConfig.freqSignal));
+	  snprintf(displayString, 17, "%d", (uint32_t)GenGetPWMFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.signalType));
 	  _copyStringToBufferRtoL(&Line1BufferNew[0], displayString, strlen(displayString), 16);
 		
 		MenuTickerStrDraw(&Line2BufferNew[0], locLanguageData[4], 1, 8, &menu_iteration_uint2);
-	  snprintf(displayString, 17, "%d", GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal));
+	  snprintf(displayString, 17, "%d", (uint32_t)GenGetSignalFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, GenConfig.signalType));
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
 		return RESULT_OK;
 	};
@@ -291,11 +435,11 @@ uint8_t Menu1_StartMenuDraw(const uint8_t frameNum)
 	{
 		_clearDisplayBuffers();
 	  MenuTickerStrDraw(&Line1Buffer[0], locLanguageData[3], 1, 8, &menu_iteration_uint1);
-	  snprintf(displayString, 17, "%d", GetRealAvailablePWMFreq(GenConfig.freqPWM, GenConfig.freqSignal));
+	  snprintf(displayString, 17, "%d", (uint32_t)GenGetPWMFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.signalType));
 	  _copyStringToBufferRtoL(&Line1Buffer[0], displayString, strlen(displayString), 16);
 	
 	  MenuTickerStrDraw(&Line2Buffer[0], locLanguageData[4], 1, 8, &menu_iteration_uint2);
-	  snprintf(displayString, 17, "%d", GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal));
+	  snprintf(displayString, 17, "%d", (uint32_t)GenGetSignalFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, GenConfig.signalType));
 	  _copyStringToBufferRtoL(&Line2Buffer[0], displayString, strlen(displayString), 16);
 	};
 		
@@ -326,9 +470,9 @@ uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 	  //1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Main config ~", 3);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[5], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter the MAIN config ", 1);
+		MenuFloatingStrDraw(&Line2BufferNew[0], locLanguageData[6], 1, 16, &menu_iteration_int2);
 		return RESULT_OK;
 	};
 	
@@ -336,12 +480,12 @@ uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 	
 	//очистка
 	//_clearDisplayBuffers(); без очистки
-	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Main config ~", 3);
-	//2 строка
 	if ( !( frameNum % 25 ) )
 	{
-		MenuFloatingStrDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter the MAIN config ", 1, 16, &menu_iteration_int1);
+		//1 строка
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[5], 1, 16, &menu_iteration_int1);	
+	  //2 строка
+		MenuFloatingStrDraw(&Line2Buffer[0], locLanguageData[6], 1, 16, &menu_iteration_int2);
 	};
 	
 	//выводим на дисплей
@@ -396,9 +540,9 @@ uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 	  //1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Extra config ~", 2);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[7], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button to enter the EXTRA config ", 1);
+		MenuFloatingStrDraw(&Line2BufferNew[0], locLanguageData[8], 1, 16, &menu_iteration_int2);
 		return RESULT_OK;
 	};
 	
@@ -406,12 +550,12 @@ uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
 	
 	//очистка
 	//_clearDisplayBuffers(); без очистки
-	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Extra config ~", 2);
-	//2 строка
 	if ( !( frameNum % 25 ) )
 	{
-		MenuFloatingStrDraw(&Line2Buffer[0], " Press Щ or Ъ button to enter the EXTRA config ", 1, 16, &menu_iteration_int1);
+		//1 строка
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[7], 1, 16, &menu_iteration_int1);	
+	  //2 строка
+		MenuFloatingStrDraw(&Line2Buffer[0], locLanguageData[8], 1, 16, &menu_iteration_int2);
 	};
 	
 	//выводим на дисплей
@@ -466,9 +610,9 @@ uint8_t Menu4_SaveMenuDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 	  //1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Save config?", 3);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[9], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-    _copyStringToBufferLtoR(&Line2BufferNew[0], " Press Щ or Ъ button for save ", 1);
+		MenuFloatingStrDraw(&Line2BufferNew[0], locLanguageData[10], 1, 16, &menu_iteration_int2);
 		return RESULT_OK;
 	};
 	
@@ -476,12 +620,12 @@ uint8_t Menu4_SaveMenuDraw(const uint8_t frameNum)
 	
 	//очистка
 	//_clearDisplayBuffers(); без очистки
-	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Save config?", 3);
-	//2 строка
 	if ( !( frameNum % 25 ) )
 	{
-		MenuFloatingStrDraw(&Line2Buffer[0], " Press Щ or Ъ button for save ", 1, 16, &menu_iteration_int1);
+		//1 строка
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[9], 1, 16, &menu_iteration_int1);	
+	  //2 строка
+		MenuFloatingStrDraw(&Line2Buffer[0], locLanguageData[10], 1, 16, &menu_iteration_int2);
 	};	
 	
 	//выводим на дисплей
@@ -523,11 +667,12 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBufferLtoR(&Line1BufferNew[0], "F PWM = ", 1);
-		snprintf(displayString, 17, "%d", GenConfig.freqPWM);
+		_copyStringToBufferLtoR(&Line1BufferNew[0], locLanguageData[11], 1);
+		menu_int32 = (int32_t)GenConfig.freqPWM;
+		snprintf(displayString, 17, "%d", menu_int32);
 	  _copyStringToBufferRtoL(&Line1BufferNew[0], displayString, strlen(displayString), 16);
     //2 строка
-	  _copyStringToBufferLtoR(&Line2BufferNew[0], "step = ", 2);
+	  _copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[12], 1);
 	  snprintf(displayString, 17, "%d", incSize);
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
 		return RESULT_OK;
@@ -537,7 +682,7 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqDraw(const uint8_t frameNum)
 	if ( ( !valMain ) && ( !valIncSize ) )
 	{
 		incSize = 1;
-		valMain = CreateAnimVarNumber(&Display, 1, 16, &GenConfig.freqPWM, 0, &incSize);
+		valMain = CreateAnimVarNumber(&Display, 1, 16, &menu_int32, 0, &incSize);
 		valIncSize = CreateAnimVarNumber(&Display, 2, 16, &incSize, 0, 0);	
     AnimVarNumberEnable(valMain, 1);	
     cursorNumN = 1;		
@@ -546,9 +691,9 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqDraw(const uint8_t frameNum)
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "F PWM = ", 1);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], locLanguageData[11], 1);	
 	//2 строка
-	_copyStringToBufferLtoR(&Line2Buffer[0], "step = ", 2);
+	_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[12], 1);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
@@ -611,45 +756,44 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqEvents(const uint16_t frameNum, SYS_EVENTS_D
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = GenConfig.freqPWM;
+				bufferVal = menu_int32;
 				AnimVarNumberDec(valMain);
-			  if ( GenConfig.freqPWM <= 0 )
+			  if ( menu_int32 <= 0 )
 				{
+					menu_int32 = bufferVal;
 					GenConfig.freqPWM = bufferVal;
 				} else
 				{
-					switch ( GenConfig.signalType )
-				  {
-						case signalSquare:
-							if ( GenConfig.isImmediateUpdate )
-								UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                             GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-					  break;
-					
-					  default:
-							if ( FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
-				      {
-								if ( GenConfig.isShowRealFreq )
-					      {
-									if ( GetRealAvailablePWMFreq(GenConfig.freqPWM, GenConfig.freqSignal) ==
-						           GetRealAvailablePWMFreq(bufferVal, GenConfig.freqSignal) )
-					        {
-										GenConfig.freqPWM = GetPrevAvailablePWMFreq(bufferVal, GenConfig.freqSignal);
-					        } else
-									{
-										GenConfig.freqPWM = GetRealAvailablePWMFreq(GenConfig.freqPWM, GenConfig.freqSignal);
-					        }
-									GenConfig.freqSignal = GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal);
-				        }
-							  if ( GenConfig.isImmediateUpdate )
-								  UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                               GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-							} else
+					if ( GenCheckFrequencyAvailable(menu_int32, GenConfig.freqSignal, GenConfig.signalType) )
+					{
+						if ( GenConfig.ShowFreqType == ShowFreqTypeNormal )
+						{
+							GenConfig.freqPWM = menu_int32;
+						  MenuTimerUpdate();
+						}
+						if ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq )
+						{
+							bufferVarK = (int32_t)GetRealAvailablePWMFreq(GenConfig.timerPrescaler, menu_int32, GenConfig.freqSignal, GenConfig.signalType);
+							if ( ( bufferVarK > 0 ) && ( bufferVarK == bufferVal ) )
 							{
-								GenConfig.freqPWM = bufferVal;
+								bufferVarK = (int32_t)GetPrevAvailablePWMFreq(GenConfig.timerPrescaler, bufferVal, GenConfig.freqSignal, GenConfig.signalType);
 							}
-					  break;
-				  }
+							if ( ( bufferVarK > 0 ) && ( bufferVarK != bufferVal ) )
+							{
+								menu_int32 = bufferVarK;
+								GenConfig.freqPWM = bufferVarK;
+								MenuTimerUpdate();
+							} else
+					    {
+						    menu_int32 = bufferVal;
+                GenConfig.freqPWM = bufferVal;						
+					    }
+						}
+					} else
+					{
+						menu_int32 = bufferVal;
+            GenConfig.freqPWM = bufferVal;						
+					}
 			  }
 		  break;
 			case 2:
@@ -665,46 +809,45 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqEvents(const uint16_t frameNum, SYS_EVENTS_D
 	{
 		switch ( cursorNumN )
 		{
-      case 1:
-				bufferVal = GenConfig.freqPWM;
+			case 1:
+				bufferVal = menu_int32;
 				AnimVarNumberInc(valMain);
-			  if ( GenConfig.freqPWM <= 0 )
+			  if ( menu_int32 <= 0 )
 				{
+					menu_int32 = bufferVal;
 					GenConfig.freqPWM = bufferVal;
 				} else
 				{
-					switch ( GenConfig.signalType )
-				  {
-						case signalSquare:
-							if ( GenConfig.isImmediateUpdate )
-								UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                             GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-					  break;
-					
-					  default:
-							if ( FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
-				      {
-								if ( GenConfig.isShowRealFreq )
-					      {
-						      if ( GetRealAvailablePWMFreq(GenConfig.freqPWM, GenConfig.freqSignal) ==
-						           GetRealAvailablePWMFreq(bufferVal, GenConfig.freqSignal) )
-					        {
-						        GenConfig.freqPWM = GetNextAvailablePWMFreq(bufferVal, GenConfig.freqSignal);
-					        } else
-					        {
-						        GenConfig.freqPWM = GetRealAvailablePWMFreq(GenConfig.freqPWM, GenConfig.freqSignal);
-					        }
-						      GenConfig.freqSignal = GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal);
-				        }
-							  if ( GenConfig.isImmediateUpdate )
-								  UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                               GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-							} else
+					if ( GenCheckFrequencyAvailable(menu_int32, GenConfig.freqSignal, GenConfig.signalType) )
+					{
+						if ( GenConfig.ShowFreqType == ShowFreqTypeNormal )
+						{
+							GenConfig.freqPWM = menu_int32;
+						  MenuTimerUpdate();
+						}
+						if ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq )
+						{
+							bufferVarK = (int32_t)GetRealAvailablePWMFreq(GenConfig.timerPrescaler, menu_int32, GenConfig.freqSignal, GenConfig.signalType);
+							if ( ( bufferVarK > 0 ) && ( bufferVarK == bufferVal ) )
 							{
-								GenConfig.freqPWM = bufferVal;
+								bufferVarK = (int32_t)GetNextAvailablePWMFreq(GenConfig.timerPrescaler, bufferVal, GenConfig.freqSignal, GenConfig.signalType);
 							}
-					  break;
-				  }
+							if ( ( bufferVarK > 0 ) && ( bufferVarK != bufferVal ) )
+							{
+								menu_int32 = bufferVarK;
+								GenConfig.freqPWM = bufferVarK;
+								MenuTimerUpdate();
+							} else
+					    {
+						    menu_int32 = bufferVal;
+                GenConfig.freqPWM = bufferVal;						
+					    }
+						}
+					} else
+					{
+						menu_int32 = bufferVal;
+            GenConfig.freqPWM = bufferVal;						
+					}
 			  }
 		  break;
 			case 2:
@@ -743,11 +886,12 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBufferLtoR(&Line1BufferNew[0], "F sign = ", 1);
-		snprintf(displayString, 17, "%d", GenConfig.freqSignal);
+		_copyStringToBufferLtoR(&Line1BufferNew[0], locLanguageData[13], 1);
+		menu_int32 = (int32_t)GenConfig.freqSignal;
+		snprintf(displayString, 17, "%d", menu_int32);
 	  _copyStringToBufferRtoL(&Line1BufferNew[0], displayString, strlen(displayString), 16);
     //2 строка
-	  _copyStringToBufferLtoR(&Line2BufferNew[0], "step = ", 3);
+	  _copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[12], 1);
 	  snprintf(displayString, 17, "%d", incSize);
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
 		return RESULT_OK;
@@ -757,7 +901,7 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqDraw(const uint8_t frameNum)
 	if ( ( !valMain ) && ( !valIncSize ) )
 	{
 		incSize = 1;
-		valMain = CreateAnimVarNumber(&Display, 1, 16, &GenConfig.freqSignal, 0, &incSize);
+		valMain = CreateAnimVarNumber(&Display, 1, 16, &menu_int32, 0, &incSize);
 		valIncSize = CreateAnimVarNumber(&Display, 2, 16, &incSize, 0, 0);	
     AnimVarNumberEnable(valMain, 1);	
     cursorNumN = 1;		
@@ -766,9 +910,9 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqDraw(const uint8_t frameNum)
 	//очистка
 	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "F sign = ", 1);	
+	_copyStringToBufferLtoR(&Line1Buffer[0], locLanguageData[13], 1);	
 	//2 строка
-	_copyStringToBufferLtoR(&Line2Buffer[0], "step = ", 3);
+	_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[12], 1);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
@@ -831,28 +975,45 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqEvents(const uint16_t frameNum, SYS_EVENT
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = GenConfig.freqSignal;
+				bufferVal = menu_int32;
 				AnimVarNumberDec(valMain);
-				if ( ( GenConfig.freqSignal > 0 ) && FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
+			  if ( menu_int32 <= 0 )
 				{
-					if ( GenConfig.isShowRealFreq )
-					{
-						if ( GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal) ==
-							   GetRealAvailableSignalFreq(GenConfig.freqPWM, bufferVal) )
-						{
-							GenConfig.freqSignal = GetPrevAvailableSignalFreq(GenConfig.freqPWM, bufferVal);
-						} else
-						{
-							GenConfig.freqSignal = GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal);
-						}
-					}
-					if ( GenConfig.isImmediateUpdate )
-						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                         GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-		    } else
-				{
+					menu_int32 = bufferVal;
 					GenConfig.freqSignal = bufferVal;
-				}
+				} else
+				{
+					if ( GenCheckFrequencyAvailable(GenConfig.freqPWM, menu_int32, GenConfig.signalType) )
+					{
+						if ( GenConfig.ShowFreqType == ShowFreqTypeNormal )
+						{
+							GenConfig.freqSignal = menu_int32;
+						  MenuTimerUpdate();
+						}
+						if ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq )
+						{
+							bufferVarK = (int32_t)GetRealAvailableSignalFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, menu_int32, GenConfig.signalType);
+							if ( ( bufferVarK > 0 ) && ( bufferVarK == bufferVal ) )
+							{
+								bufferVarK = (int32_t)GetPrevAvailableSignalFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, bufferVal, GenConfig.signalType);
+							}
+							if ( ( bufferVarK > 0 ) && ( bufferVarK != bufferVal ) )
+							{
+								menu_int32 = bufferVarK;
+								GenConfig.freqSignal = bufferVarK;
+								MenuTimerUpdate();
+							} else
+							{
+								menu_int32 = bufferVal;
+								GenConfig.freqSignal = bufferVal;
+							}
+						}
+					} else
+					{
+						menu_int32 = bufferVal;
+            GenConfig.freqSignal = bufferVal;						
+					}
+			  }
 		  break;
 			case 2:
 				AnimVarNumberDec(valIncSize);
@@ -868,28 +1029,45 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqEvents(const uint16_t frameNum, SYS_EVENT
 		switch ( cursorNumN )
 		{
 			case 1:
-				bufferVal = GenConfig.freqSignal;
+				bufferVal = menu_int32;
 				AnimVarNumberInc(valMain);
-				if ( ( GenConfig.freqSignal > 0 ) && FrequencyCheck(GenConfig.freqPWM, GenConfig.freqSignal) )
+			  if ( menu_int32 <= 0 )
 				{
-					if ( GenConfig.isShowRealFreq )
-					{
-						if ( GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal) ==
-							   GetRealAvailableSignalFreq(GenConfig.freqPWM, bufferVal) )
-						{
-							GenConfig.freqSignal = GetNextAvailableSignalFreq(GenConfig.freqPWM, bufferVal);
-						} else
-						{
-							GenConfig.freqSignal = GetRealAvailableSignalFreq(GenConfig.freqPWM, GenConfig.freqSignal);
-						}
-					}
-					if ( GenConfig.isImmediateUpdate )
-						UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                         GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-		    } else
-				{
+					menu_int32 = bufferVal;
 					GenConfig.freqSignal = bufferVal;
-				}
+				} else
+				{
+					if ( GenCheckFrequencyAvailable(GenConfig.freqPWM, menu_int32, GenConfig.signalType) )
+					{
+						if ( GenConfig.ShowFreqType == ShowFreqTypeNormal )
+						{
+							GenConfig.freqSignal = menu_int32;
+						  MenuTimerUpdate();
+						}
+						if ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq )
+						{
+							bufferVarK = (int32_t)GetRealAvailableSignalFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, menu_int32, GenConfig.signalType);
+							if ( ( bufferVarK > 0 ) && ( bufferVarK == bufferVal ) )
+							{
+								bufferVarK = (int32_t)GetNextAvailableSignalFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, bufferVal, GenConfig.signalType);
+							}
+							if ( ( bufferVarK > 0 ) && ( bufferVarK != bufferVal ) )
+							{
+								menu_int32 = bufferVarK;
+								GenConfig.freqSignal = bufferVarK;
+								MenuTimerUpdate();
+							} else
+							{
+								menu_int32 = bufferVal;
+								GenConfig.freqSignal = bufferVal;
+							}
+						}
+					} else
+					{
+						menu_int32 = bufferVal;
+            GenConfig.freqSignal = bufferVal;						
+					}
+			  }
 		  break;
 			case 2:
 				AnimVarNumberInc(valIncSize);
@@ -927,7 +1105,7 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBufferLtoR(&Line1BufferNew[0], "Power factor", 3);
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[14], 1, 16, &menu_iteration_int1);
     //2 строка
 	  snprintf(displayString, 17, "%.2lf", (double)GenConfig.powerK / 100);
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 12);
@@ -940,11 +1118,16 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerDraw(const uint8_t frameNum)
 		valMain = CreateAnimVarNumber(&Display, 2, 12, &GenConfig.powerK, 2, 0);
     AnimVarNumberEnable(valMain, 1);		
 	}
-	
-	//очистка
-	_clearDisplayBuffers();
+
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Power factor", 3);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[14], 1, 16, &menu_iteration_int1);	
+	};
+	
+	//2 строка
+	_clearDisplayBuffer2();
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
@@ -986,7 +1169,13 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
   {
 		FreeDataWhenTransition();
 		menuTransDirection = 2; //влево(+)
-		MenuGoToNextItem(GenMenu);
+		if ( ( GenConfig.ShowFreqType == ShowFreqTypeNormal ) && ( GenConfig.signalType == signalSquare ) )
+		{
+			MenuGoToParentItem(GenMenu);
+		} else
+		{
+		  MenuGoToNextItem(GenMenu);
+		}
 	};
 	
 	//событие при вращении валкодера против ч стрелки
@@ -995,9 +1184,7 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
 		AnimVarNumberDec(valMain);
 		if ( GenConfig.powerK < MIN_POWER_K )
 			GenConfig.powerK = MIN_POWER_K;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -1006,9 +1193,7 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
 		AnimVarNumberInc(valMain);
 		if ( GenConfig.powerK > MAX_POWER_K )
 			GenConfig.powerK = MAX_POWER_K;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1023,7 +1208,7 @@ uint8_t Menu2_SubMenu4_ChangeSignalCenterDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBufferLtoR(&Line1BufferNew[0], "Center factor", 2);
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[15], 1, 16, &menu_iteration_int1);
     //2 строка
 	  snprintf(displayString, 17, "%.2lf", (double)GenConfig.centerK / 100);
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 12);
@@ -1036,11 +1221,16 @@ uint8_t Menu2_SubMenu4_ChangeSignalCenterDraw(const uint8_t frameNum)
 		valMain = CreateAnimVarNumber(&Display, 2, 12, &GenConfig.centerK, 2, 0);
     AnimVarNumberEnable(valMain, 1);		
 	}
-	
-	//очистка
-	_clearDisplayBuffers();
+
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Center factor", 2);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[15], 1, 16, &menu_iteration_int1);	
+	};
+	
+	//2 строка
+	_clearDisplayBuffer2();
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
@@ -1091,9 +1281,7 @@ uint8_t Menu2_SubMenu4_ChangeSignalCenterEvents(const uint16_t frameNum, SYS_EVE
 		AnimVarNumberDec(valMain);
 		if ( GenConfig.centerK < MIN_CENTER_K )
 			GenConfig.centerK = MIN_CENTER_K;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -1102,9 +1290,358 @@ uint8_t Menu2_SubMenu4_ChangeSignalCenterEvents(const uint16_t frameNum, SYS_EVE
 		AnimVarNumberInc(valMain);
 		if ( GenConfig.centerK > MAX_CENTER_K )
 			GenConfig.centerK = MAX_CENTER_K;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu2 - SubMenu1 - alt - Change Prescaler
+uint8_t Menu2_SubMenu1_Alt_ChangePrescalerDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+		_copyStringToBufferLtoR(&Line1BufferNew[0], locLanguageData[16], 1);
+		_copyStringToBufferRtoL(&Line1BufferNew[0], locLanguageData[17], strlen(locLanguageData[17]), 16);
+    //2 строка
+		menu_int32 = GenConfig.timerPrescaler + 1;
+		snprintf(displayString, 17, "%d", menu_int32);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 5);		
+		GetFormattedDouble((double)cpuFreq / menu_int32, 9, displayString, 17);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 5, &menu_int32, 0, 0);
+    AnimVarNumberEnable(valMain, 1);		
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], locLanguageData[16], 1);
+	_copyStringToBufferRtoL(&Line1Buffer[0], locLanguageData[17], strlen(locLanguageData[17]), 16);
+  //2 строка		
+	GetFormattedDouble((double)cpuFreq / menu_int32, 9, displayString, 17);
+	_copyStringToBufferRtoL(&Line2Buffer[0], displayString, strlen(displayString), 16);
+
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);		
+	AnimVarNumberDrawCursor(valMain);
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu2_SubMenu1_Alt_ChangePrescalerEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		MenuGoToParentItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		MenuGoToNextItem(GenMenu);
+	};
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		bufferVal = menu_int32;
+		AnimVarNumberDec(valMain);
+		bufferVarK = GenCheckSignalConfig(menu_int32 - 1, GenConfig.timerARR, GenConfig.timerStepsCCR,
+		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		if ( !bufferVarK )
+		{
+			menu_int32 = bufferVal;
+		}
+		GenConfig.timerPrescaler = menu_int32 - 1;
+    MenuTimerUpdate();
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		bufferVal = menu_int32;
+		AnimVarNumberInc(valMain);
+		bufferVarK = GenCheckSignalConfig(menu_int32 - 1, GenConfig.timerARR, GenConfig.timerStepsCCR,
+		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		if ( !bufferVarK )
+		{
+			menu_int32 = bufferVal;
+		}
+		GenConfig.timerPrescaler = menu_int32 - 1;
+    MenuTimerUpdate();
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu2 - SubMenu2 - alt - Change ARR
+uint8_t Menu2_SubMenu2_Alt_ChangeARRDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+		_copyStringToBufferLtoR(&Line1BufferNew[0], locLanguageData[18], 1);
+		_copyStringToBufferRtoL(&Line1BufferNew[0], locLanguageData[11], strlen(locLanguageData[11]), 16);
+    //2 строка
+		menu_int32 = GenConfig.timerARR;
+		snprintf(displayString, 17, "%d", menu_int32);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 5);		
+		GetFormattedDouble(GenGetPWMFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.signalType), 9, displayString, 17);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 5, &menu_int32, 0, 0);
+    AnimVarNumberEnable(valMain, 1);		
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], locLanguageData[18], 1);
+	_copyStringToBufferRtoL(&Line1Buffer[0], locLanguageData[11], strlen(locLanguageData[11]), 16);
+  //2 строка		
+	GetFormattedDouble(GenGetPWMFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.signalType), 9, displayString, 17);
+	_copyStringToBufferRtoL(&Line2Buffer[0], displayString, strlen(displayString), 16);
+
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);		
+	AnimVarNumberDrawCursor(valMain);
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu2_SubMenu2_Alt_ChangeARREvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		MenuGoToParentItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		MenuGoToNextItem(GenMenu);
+	};
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		bufferVal = menu_int32;
+		AnimVarNumberDec(valMain);
+		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, menu_int32, GenConfig.timerStepsCCR,
+		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		if ( !bufferVarK )
+		{
+			menu_int32 = bufferVal;
+		}
+		GenConfig.timerARR = menu_int32;
+    MenuTimerUpdate();
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		bufferVal = menu_int32;
+		AnimVarNumberInc(valMain);
+		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, menu_int32, GenConfig.timerStepsCCR,
+		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		if ( !bufferVarK )
+		{
+			menu_int32 = bufferVal;
+		}
+		GenConfig.timerARR = menu_int32;
+    MenuTimerUpdate();
+	};
+	
+	Buttons_1_2_scan(genEvents);
+	
+	return RESULT_OK;
+}
+
+//Menu2 - SubMenu3 - alt - Change Signal Steps / CCR
+uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCRDraw(const uint8_t frameNum)
+{
+	if ( frameNum == 0 )
+	{
+		_clearDisplayNewBuffers();
+		//1 строка
+		_copyStringToBufferLtoR(&Line1BufferNew[0], locLanguageData[19], 1);
+		_copyStringToBufferRtoL(&Line1BufferNew[0], locLanguageData[13], strlen(locLanguageData[13]), 16);
+    //2 строка
+		menu_int32 = GenConfig.timerStepsCCR;
+		snprintf(displayString, 17, "%d", menu_int32);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 5);		
+		GetFormattedDouble(GenGetSignalFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, GenConfig.signalType), 9, displayString, 17);
+	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 16);
+		return RESULT_OK;
+	};
+	
+	//проверка полей ввода, создание при необходимости
+	if ( !valMain )
+	{
+		valMain = CreateAnimVarNumber(&Display, 2, 5, &menu_int32, 0, 0);
+    AnimVarNumberEnable(valMain, 1);		
+	}
+	
+	//очистка
+	_clearDisplayBuffers();
+	//1 строка
+	_copyStringToBufferLtoR(&Line1Buffer[0], locLanguageData[19], 1);
+	_copyStringToBufferRtoL(&Line1Buffer[0], locLanguageData[13], strlen(locLanguageData[13]), 16);
+  //2 строка		
+  GetFormattedDouble(GenGetSignalFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, GenConfig.signalType), 9, displayString, 17);
+	_copyStringToBufferRtoL(&Line2Buffer[0], displayString, strlen(displayString), 16);
+
+	
+	//выводим на дисплей
+	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
+	HD44780DisplayWriteString(&Display, Line2Buffer, 2, 1);
+	
+	//выводим числа
+	AnimVarNumberDraw(valMain);		
+	AnimVarNumberDrawCursor(valMain);
+	
+	return RESULT_OK;
+}
+
+uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCREvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents)
+{
+	//событие при удерживании нажатой кнопки валкодера и поворота по ч стрелке
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CW ) )
+	{
+		AnimVarNumberCursorMoveRight(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при удерживании нажатой кнопки валкодера и поворота против ч стрелки
+	if ( ( genEvents & EVENT_VALCODER_BUTTON_PRESSED ) && ( genEvents & EVENT_VALCODER_CCW ) )
+	{
+		AnimVarNumberCursorMoveLeft(valMain);
+		return RESULT_OK;
+	};
+	
+	//событие при нажатии кнопки 5	
+	if ( genEvents & EVENT_BUTTON5_CLICK )
+	{
+		FreeDataWhenTransition();
+		menuTransDirection = 1; //вправо(-)
+		MenuGoToParentItem(GenMenu);
+	};
+	
+	//событие при нажатии кнопки 6
+	if ( genEvents & EVENT_BUTTON6_CLICK )
+  {
+		FreeDataWhenTransition();
+		menuTransDirection = 2; //влево(+)
+		if ( GenConfig.signalType == signalSquare )
+		{
+		  MenuGoToParentItem(GenMenu);
+		} else
+		{
+		  MenuGoToNextItem(GenMenu);
+		}
+	};
+	
+	//событие при вращении валкодера против ч стрелки
+	if ( genEvents & EVENT_VALCODER_CCW )
+	{
+		bufferVal = menu_int32;
+		AnimVarNumberDec(valMain);
+		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, GenConfig.timerARR, menu_int32,
+		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		if ( !bufferVarK )
+		{
+			menu_int32 = bufferVal;
+		}
+		GenConfig.timerStepsCCR = menu_int32;
+    MenuTimerUpdate();
+	};
+	
+	//событие при вращении валкодера по ч стрелке
+	if ( genEvents & EVENT_VALCODER_CW )
+	{
+		bufferVal = menu_int32;
+		AnimVarNumberInc(valMain);
+		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, GenConfig.timerARR, menu_int32,
+		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		if ( !bufferVarK )
+		{
+			menu_int32 = bufferVal;
+		}
+		GenConfig.timerStepsCCR = menu_int32;
+    MenuTimerUpdate();
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1119,9 +1656,9 @@ uint8_t Menu3_SubMenu1_ChangeDeadTimeDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBufferLtoR(&Line1BufferNew[0], "Dead Time", 4);
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[20], 1, 16, &menu_iteration_int1);
     //2 строка
-		_copyStringToBufferLtoR(&Line2BufferNew[0], "ns", 12);
+		_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[21], 12);
 	  snprintf(displayString, 17, "%d", GenConfig.pwmDeadTimeInNS);
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 10);
 		return RESULT_OK;
@@ -1134,12 +1671,16 @@ uint8_t Menu3_SubMenu1_ChangeDeadTimeDraw(const uint8_t frameNum)
     AnimVarNumberEnable(valMain, 1);			
 	}
 	
-	//очистка
-	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Dead Time", 4);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[20], 1, 16, &menu_iteration_int1);	
+	};
+	
 	//2 строка
-	_copyStringToBufferLtoR(&Line2Buffer[0], "ns", 12);
+	_clearDisplayBuffer2();
+	_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[21], 12);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
@@ -1190,9 +1731,7 @@ uint8_t Menu3_SubMenu1_ChangeDeadTimeEvents(const uint16_t frameNum, SYS_EVENTS_
 		AnimVarNumberDec(valMain);
 		if ( GenConfig.pwmDeadTimeInNS < MIN_DEAD_TIME )
 			GenConfig.pwmDeadTimeInNS = MIN_DEAD_TIME;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -1201,9 +1740,7 @@ uint8_t Menu3_SubMenu1_ChangeDeadTimeEvents(const uint16_t frameNum, SYS_EVENTS_
 		AnimVarNumberInc(valMain);
 		if ( GenConfig.pwmDeadTimeInNS > MAX_DEAD_TIME )
 			GenConfig.pwmDeadTimeInNS = MAX_DEAD_TIME;		
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1218,9 +1755,9 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		_copyStringToBufferLtoR(&Line1BufferNew[0], "Min pulse time", 2);
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[22], 1, 16, &menu_iteration_int1);
     //2 строка
-		_copyStringToBufferLtoR(&Line2BufferNew[0], "ns", 12);
+		_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[21], 12);
 	  snprintf(displayString, 17, "%d", GenConfig.pwmMinPulseLengthInNS);
 	  _copyStringToBufferRtoL(&Line2BufferNew[0], displayString, strlen(displayString), 10);
 		return RESULT_OK;
@@ -1233,12 +1770,16 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeDraw(const uint8_t frameNum)
     AnimVarNumberEnable(valMain, 1);			
 	}
 	
-	//очистка
-	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Min pulse time", 2);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[22], 1, 16, &menu_iteration_int1);	
+	};
+	
 	//2 строка
-	_copyStringToBufferLtoR(&Line2Buffer[0], "ns", 12);
+	_clearDisplayBuffer2();
+	_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[21], 12);
 	
 	//выводим на дисплей
 	HD44780DisplayWriteString(&Display, Line1Buffer, 1, 1);
@@ -1289,9 +1830,7 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeEvents(const uint16_t frameNum, SYS_EVE
 		AnimVarNumberDec(valMain);
 		if ( GenConfig.pwmMinPulseLengthInNS < MIN_PULSE_TIME )
 			GenConfig.pwmMinPulseLengthInNS = MIN_PULSE_TIME;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -1300,9 +1839,7 @@ uint8_t Menu3_SubMenu2_ChangeMinPulseTimeEvents(const uint16_t frameNum, SYS_EVE
 		AnimVarNumberInc(valMain);
 		if ( GenConfig.pwmMinPulseLengthInNS > MAX_PULSE_TIME )
 			GenConfig.pwmMinPulseLengthInNS = MAX_PULSE_TIME;		
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1317,20 +1854,20 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Signal  type", 3);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[23], 1, 16, &menu_iteration_int1);	
 	  //2 строка
 	  switch ( GenConfig.signalType )
 		{
-			case 1:
-				_copyStringToBufferLtoR(&Line2BufferNew[0], "Sine", 7);
+			case signalSinus:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[24],  GetCenterPos(locLanguageData[24]));
 		  break;
 			
-			case 2:
-				_copyStringToBufferLtoR(&Line2BufferNew[0], "Triangle", 5);
+			case signalTriangle:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[25], GetCenterPos(locLanguageData[25]));
 		  break;
 			
-			case 3:
-				_copyStringToBufferLtoR(&Line2BufferNew[0], "Square", 6);
+			case signalSquare:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[26], GetCenterPos(locLanguageData[26]));
 		  break;
 	   };
 		return RESULT_OK;
@@ -1338,26 +1875,39 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 	
 	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
-	//очистка
-	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Signal  type", 3);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[23], 1, 16, &menu_iteration_int1);	
+	};
+		
 	//2 строка
+	_clearDisplayBuffer2();
 	switch ( GenConfig.signalType )
 	{
-		case 1:
-			_copyStringToBufferLtoR(&Line2Buffer[0], "Sine", 7);
-		  MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+		case signalSinus:
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[24],  GetCenterPos(locLanguageData[24]));
+		  bufferVal = strlen(locLanguageData[24]);
+		  bufferVarK = GetCenterPos(locLanguageData[24]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
-		case 2:
-			_copyStringToBufferLtoR(&Line2Buffer[0], "Triangle", 5);
-		  MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 13, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		case signalTriangle:
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[25], GetCenterPos(locLanguageData[25]));
+		  bufferVal = strlen(locLanguageData[25]);
+		  bufferVarK = GetCenterPos(locLanguageData[25]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
-		case 3:
-			_copyStringToBufferLtoR(&Line2Buffer[0], "Square", 6);
-		  MenuAnimSelectionDraw(&Line2Buffer[0], 5, 5, 12, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		case signalSquare:
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[26], GetCenterPos(locLanguageData[26]));
+		  bufferVal = strlen(locLanguageData[26]);
+		  bufferVarK = GetCenterPos(locLanguageData[26]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 	};
 	
@@ -1388,21 +1938,39 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENT
 	//событие при вращении валкодера против ч стрелки
 	if ( genEvents & EVENT_VALCODER_CCW )
 	{
-		if ( !--GenConfig.signalType ) GenConfig.signalType = 1;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+		bufferVal = GenConfig.signalType;
+		if ( --GenConfig.signalType < signalIndexMin ) GenConfig.signalType = signalIndexMin;
+		if ( ( bufferVal == signalSquare ) && ( GenConfig.signalType != signalSquare ) )
+		{
+			GenChangeMenu();
+			MenuResetSignalVal();
+		}
+		if ( ( bufferVal != signalSquare ) && ( GenConfig.signalType == signalSquare ) )
+		{
+			GenChangeMenu();
+			MenuResetSignalVal();
+		}
+		MenuTimerUpdate();
 		LedUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
-		if ( ++GenConfig.signalType > 3 ) GenConfig.signalType = 3;
-		if ( GenConfig.isImmediateUpdate )
-			UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                   GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
-	  LedUpdate();
+		bufferVal = GenConfig.signalType;
+		if ( ++GenConfig.signalType > signalIndexMax ) GenConfig.signalType = signalIndexMax;
+		if ( ( bufferVal == signalSquare ) && ( GenConfig.signalType != signalSquare ) )
+		{
+			GenChangeMenu();
+			MenuResetSignalVal();
+		}
+		if ( ( bufferVal != signalSquare ) && ( GenConfig.signalType == signalSquare ) )
+		{
+			GenChangeMenu();
+			MenuResetSignalVal();
+		}
+		MenuTimerUpdate();
+		LedUpdate();
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1412,38 +1980,48 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeEvents(const uint16_t frameNum, SYS_EVENT
 	
 //Menu3 - SubMenu4 - Change Update Type
 uint8_t Menu3_SubMenu4_ChangeUpdateTypeDraw(const uint8_t frameNum)
-{
+{	
 	if ( frameNum == 0 )
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Signal  update", 2);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[27], 1, 16, &menu_iteration_int1);	
 	  //2 строка
 	  if ( GenConfig.isImmediateUpdate )
 	  {
-		  _copyStringToBufferLtoR(&Line2BufferNew[0], "Auto", 7);
+			_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[28],  GetCenterPos(locLanguageData[28]));
 	  } else
 	  {
-		  _copyStringToBufferLtoR(&Line2BufferNew[0], "Manually", 5);
+			_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[29],  GetCenterPos(locLanguageData[29]));
 	  };
 		return RESULT_OK;
 	};
 	
 	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
-	//очистка
-	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Signal  update", 2);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[27], 1, 16, &menu_iteration_int1);	
+	};
+		
 	//2 строка
+	_clearDisplayBuffer2();
 	if ( GenConfig.isImmediateUpdate )
 	{
-		_copyStringToBufferLtoR(&Line2Buffer[0], "Auto", 7);
-		MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[28],  GetCenterPos(locLanguageData[28]));
+		bufferVal = strlen(locLanguageData[28]);
+		bufferVarK = GetCenterPos(locLanguageData[28]);
+		MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                          bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 	} else
 	{
-		_copyStringToBufferLtoR(&Line2Buffer[0], "Manually", 5);
-		MenuAnimSelectionDraw(&Line2Buffer[0], 4, 4, 13, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[29],  GetCenterPos(locLanguageData[29]));
+		bufferVal = strlen(locLanguageData[29]);
+		bufferVarK = GetCenterPos(locLanguageData[29]);
+		MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                          bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 	};
 	
 	//выводим на дисплей
@@ -1481,8 +2059,7 @@ uint8_t Menu3_SubMenu4_ChangeUpdateTypeEvents(const uint16_t frameNum, SYS_EVENT
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
 		GenConfig.isImmediateUpdate = 1;
-		UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-                 GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+    MenuTimerUpdate();
 		LedUpdate();
 	};
 	
@@ -1498,33 +2075,61 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Show real freq", 2);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[30], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-	  if ( GenConfig.isShowRealFreq )
-	  {
-		  _copyStringToBufferLtoR(&Line2BufferNew[0], "Yes", 7);
-	  } else
-	  {
-		  _copyStringToBufferLtoR(&Line2BufferNew[0], "No", 8);
-	  };
+	  switch ( GenConfig.ShowFreqType )
+		{
+			case ShowFreqTypeNormal:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[31],  GetCenterPos(locLanguageData[31]));
+		  break;
+			
+			case ShowFreqTypeActualFreq:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[32], GetCenterPos(locLanguageData[32]));
+		  break;
+			
+			case ShowFreqTypeDirectControl:
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[33], GetCenterPos(locLanguageData[33]));
+		  break;
+	   };
 		return RESULT_OK;
 	};
 	
 	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
-	//очистка
-	_clearDisplayBuffers();
 	//1 строка
-	_copyStringToBufferLtoR(&Line1Buffer[0], "Show real freq", 2);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[30], 1, 16, &menu_iteration_int1);	
+	};
+		
 	//2 строка
-	if ( GenConfig.isShowRealFreq )
+	_clearDisplayBuffer2();
+	switch ( GenConfig.ShowFreqType )
 	{
-		_copyStringToBufferLtoR(&Line2Buffer[0], "Yes", 7);
-		MenuAnimSelectionDraw(&Line2Buffer[0], 6, 6, 11, 16, GenMenu->MenuTargetDrawFPS, frameNum);
-	} else
-	{
-		_copyStringToBufferLtoR(&Line2Buffer[0], "No", 8);
-		MenuAnimSelectionDraw(&Line2Buffer[0], 7, 7, 10, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		case ShowFreqTypeNormal:
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[31],  GetCenterPos(locLanguageData[31]));
+		  bufferVal = strlen(locLanguageData[31]);
+		  bufferVarK = GetCenterPos(locLanguageData[31]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+		break;
+		
+		case ShowFreqTypeActualFreq:
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[32], GetCenterPos(locLanguageData[32]));
+		  bufferVal = strlen(locLanguageData[32]);
+		  bufferVarK = GetCenterPos(locLanguageData[32]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+		break;
+		
+		case ShowFreqTypeDirectControl:
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[33], GetCenterPos(locLanguageData[33]));
+		  bufferVal = strlen(locLanguageData[33]);
+		  bufferVarK = GetCenterPos(locLanguageData[33]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+		break;
 	};
 	
 	//выводим на дисплей
@@ -1554,13 +2159,25 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeEvents(const uint16_t frameNum, SYS_EVE
 	//событие при вращении валкодера против ч стрелки
 	if ( genEvents & EVENT_VALCODER_CCW )
 	{
-		GenConfig.isShowRealFreq = 0;
+		bufferVal = GenConfig.ShowFreqType;
+		if ( --GenConfig.ShowFreqType < ShowFreqTypeNormal ) GenConfig.ShowFreqType = ShowFreqTypeNormal;
+		if ( bufferVal != GenConfig.ShowFreqType )
+		{
+			GenChangeMenu();
+			MenuTimerUpdate();
+		}
 	};
 	
 	//событие при вращении валкодера по ч стрелке
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
-		GenConfig.isShowRealFreq = 1;
+		bufferVal = GenConfig.ShowFreqType;
+		if ( ++GenConfig.ShowFreqType > ShowFreqTypeDirectControl ) GenConfig.ShowFreqType = ShowFreqTypeDirectControl;
+		if ( bufferVal != GenConfig.ShowFreqType )
+		{
+			GenChangeMenu();
+			MenuTimerUpdate();
+		}
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -1575,16 +2192,16 @@ uint8_t Menu3_SubMenu6_ChangeLanguageDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 		//1 строка
-		MenuFloatingStrDraw(&Line1BufferNew[0], "Language", 1, 16, &menu_iteration_int1);	
+		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[34], 1, 16, &menu_iteration_int1);
 	  //2 строка
 		switch ( GenConfig.languageId )
 		{
 			case en_US:
-				_copyStringToBufferLtoR(&Line2BufferNew[0], "English", GetCenterPos("English"));
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[35],  GetCenterPos(locLanguageData[35]));
 			break;
 			
 			case ru_RU:
-				_copyStringToBufferLtoR(&Line2BufferNew[0], "Russian", GetCenterPos("Russian"));
+				_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[36],  GetCenterPos(locLanguageData[36]));
 			break;
 		};
 		return RESULT_OK;
@@ -1592,23 +2209,31 @@ uint8_t Menu3_SubMenu6_ChangeLanguageDraw(const uint8_t frameNum)
 	
 	if ( Display.displayOnOffControl & HD44780_FLAG_CURSORON ) HD44780DisplaySetCursorVisible(&Display, 0);
 	
-	//очистка
-	_clearDisplayBuffers();
 	//1 строка
-	MenuFloatingStrDraw(&Line1Buffer[0], "Language", 1, 16, &menu_iteration_int1);	
+	if ( !( frameNum % 25 ) )
+	{
+		_clearDisplayBuffer1();
+		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[34], 1, 16, &menu_iteration_int1);	
+	};
+		
 	//2 строка
+	_clearDisplayBuffer2();
   switch ( GenConfig.languageId )
 	{
 		case en_US:
-			_copyStringToBufferLtoR(&Line2Buffer[0], "English", GetCenterPos("English"));
-		  MenuAnimSelectionDraw(&Line2Buffer[0], GetCenterPos("English") - 1, GetCenterPos("English") - 1,
-                            GetCenterPos("English") + strlen("English") - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[35],  GetCenterPos(locLanguageData[28]));
+		  bufferVal = strlen(locLanguageData[35]);
+		  bufferVarK = GetCenterPos(locLanguageData[35]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 			
 		case ru_RU:
-			_copyStringToBufferLtoR(&Line2Buffer[0], "Russian", GetCenterPos("Russian"));
-		  MenuAnimSelectionDraw(&Line2Buffer[0], GetCenterPos("Russian") - 1, GetCenterPos("Russian") - 1,
-                            GetCenterPos("Russian") + strlen("Russian") - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum);
+		  _copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[36],  GetCenterPos(locLanguageData[28]));
+		  bufferVal = strlen(locLanguageData[36]);
+		  bufferVarK = GetCenterPos(locLanguageData[36]);
+		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
+                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 	};
 	
@@ -1639,14 +2264,14 @@ uint8_t Menu3_SubMenu6_ChangeLanguageEvents(const uint16_t frameNum, SYS_EVENTS_
 	//событие при вращении валкодера против ч стрелки
 	if ( genEvents & EVENT_VALCODER_CCW )
 	{
-		if ( GenConfig.languageId > 0 ) GenConfig.languageId--;
+		if ( GenConfig.languageId > locLangMin ) GenConfig.languageId--;
 		GenChangeLocalization(GenConfig.languageId);
   };
 	
 	//событие при вращении валкодера по ч стрелке
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
-		if ( GenConfig.languageId < 1 ) GenConfig.languageId++;
+		if ( GenConfig.languageId < locLangMax ) GenConfig.languageId++;
 		GenChangeLocalization(GenConfig.languageId);
 	};
 	
@@ -1662,9 +2287,9 @@ uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum)
 	{
 		_clearDisplayNewBuffers();
 	  //1 строка
-	  _copyStringToBufferLtoR(&Line1BufferNew[0], "Config", 6);	
+		_copyStringToBufferLtoR(&Line1BufferNew[0], locLanguageData[37],  GetCenterPos(locLanguageData[37]));	
 	  //2 строка
-    _copyStringToBufferLtoR(&Line2BufferNew[0], "......", 6);
+		_copyStringToBufferLtoR(&Line2BufferNew[0], locLanguageData[38],  GetCenterPos(locLanguageData[38]));	
 		return RESULT_OK;
 	};
 	
@@ -1675,15 +2300,15 @@ uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum)
 		//очистка
 	  _clearDisplayBuffers();
 	  //1 строка
-	  _copyStringToBufferLtoR(&Line1Buffer[0], "Config", 6);	
+		_copyStringToBufferLtoR(&Line1Buffer[0], locLanguageData[37],  GetCenterPos(locLanguageData[37]));	
 	  //2 строка
 		//сохранение
 		if ( FlashWriteData( (uint8_t*)&GenConfig, sizeof(GenConfig) ) )
 		{
-			_copyStringToBufferLtoR(&Line2Buffer[0], "saved!", 6);
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[39],  GetCenterPos(locLanguageData[39]));
 		} else
 		{
-			_copyStringToBufferLtoR(&Line2Buffer[0], "failed! :(", 4);
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[40],  GetCenterPos(locLanguageData[40]));
 		};		
 	};
 	

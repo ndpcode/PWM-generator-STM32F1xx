@@ -11,7 +11,7 @@ typedef struct
 	uint8_t row, column;
 	int32_t *targetNumber;
 	uint8_t doublePointPosition;
-	uint32_t incSize;
+	int32_t incSize;
 	uint8_t cursorPosition;
 	int32_t *externIncSize;
 	uint8_t varEnable;

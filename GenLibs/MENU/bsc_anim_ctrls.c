@@ -78,7 +78,6 @@ uint8_t getTargetNumLength(ANIM_VAR_NUMBER *varNumber)
 
 void AnimVarNumberCheckCursor(ANIM_VAR_NUMBER *varNumber)
 {
-	char stringBuffer[16];
 	uint8_t numLength;
 
 	//находим длину числа
@@ -201,11 +200,11 @@ uint8_t AnimVarNumberDec(ANIM_VAR_NUMBER *varNumber)
 	
 	if ( !varNumber->externIncSize )
 	{
-		if ( (int32_t)(*varNumber->targetNumber) >= (int32_t)( -2147483648 + varNumber->incSize ) )
+		if ( (int32_t)*(varNumber->targetNumber) >= (int32_t)( (int32_t)-2147483647 + varNumber->incSize ) )
 			(*varNumber->targetNumber) -= varNumber->incSize;			
 	} else
 	{
-		if ( (int32_t)(*varNumber->targetNumber) >= (int32_t)( -2147483648 + (*varNumber->externIncSize) * varNumber->incSize ) )
+		if ( (int32_t)*(varNumber->targetNumber) >= (int32_t)( (int32_t)-2147483647 + (*varNumber->externIncSize) * varNumber->incSize ) )
 			(*varNumber->targetNumber) -= (*varNumber->externIncSize) * varNumber->incSize;
 	};
 	
@@ -216,7 +215,6 @@ uint8_t AnimVarNumberDec(ANIM_VAR_NUMBER *varNumber)
 
 uint8_t AnimVarNumberCursorMoveLeft(ANIM_VAR_NUMBER *varNumber)
 {
-	char stringBuffer[16];
 	uint8_t numLength;
 	if ( !AnimVarNumberCheckConfig(varNumber) ) return 0;
 	if ( !varNumber->varEnable ) return 0;
@@ -328,7 +326,7 @@ uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, ui
 	if ( !iteration ) return 0;	
 	if ( ( strlen(_buffer) - startPos + 1 ) < lineLength ) return 0;
 	
-	floatLength = strlen(floatText);
+	floatLength = strlen(floatText);	
 	if ( lineLength < floatLength )
 	{
 		if ( ( abs(*iteration) + lineLength ) <= floatLength )
@@ -342,7 +340,7 @@ uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, ui
     if ( ( abs(*iteration) + lineLength ) > floatLength ) *iteration = -(*iteration - 2);
   } else
 	{
-		for ( i = 0; i < floatLength; i++ )
+		for ( i = ( lineLength - floatLength ) / 2; i < floatLength; i++ )
 		{
 			_buffer[startPos - 1 + i] = floatText[i];		
 		}
@@ -374,7 +372,7 @@ uint8_t MenuTickerStrDraw(char *_buffer, char *tickerText, uint8_t startPos, uin
 	  (*iteration)++;
   } else
 	{
-		for ( i = 0; i < tickerLength; i++ )
+		for ( i = ( lineLength - tickerLength ) / 2; i < tickerLength; i++ )
 		{
 			_buffer[startPos - 1 + i] = tickerText[i];		
 		}

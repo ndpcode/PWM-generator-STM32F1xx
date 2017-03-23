@@ -262,15 +262,83 @@ uint8_t MenuGoToChildItem(TREE_MENU *menuHead)
 	return 1;
 }
 
-uint8_t MenuGoToItemId(TREE_MENU *menuHead, uint16_t MeniItemId)
+uint8_t MenuGoToItemId(TREE_MENU *menuHead, uint16_t MenuItemId)
 {
 	//проверка входных данных
 	if ( !menuCheckMainConfig(menuHead) ) return 0;
 	if ( !menuHead->MenuEditAllow ) return 0;
 	
 	//переключаем текущий элемент на указанный
-	if ( !menuSwitchCurrentItemTo(menuHead, getMenuItemById(menuHead->MenuHeadItem, MeniItemId)) ) return 0;
+	if ( !menuSwitchCurrentItemTo(menuHead, getMenuItemById(menuHead->MenuHeadItem, MenuItemId)) ) return 0;
 	return 1;
+}
+
+uint8_t MenuDeleteItemService(TREE_MENU *menuHead, TREE_MENU_ITEM *menuItem)
+{
+	//проверка наличия дочерних элементов и их удаление
+	if ( menuItem->MenuChild )
+	{
+		if ( !MenuDeleteItemService(menuHead, menuItem->MenuChild) ) return 0;		
+	}
+	//проверка наличия следующих элементов и их удаление
+	if ( menuItem->MenuNextItem )
+	{
+		if ( !MenuDeleteItemService(menuHead, menuItem->MenuNextItem) ) return 0;		
+	}
+	//удаление текущего элемента
+	//удаление информации у родителя
+	if ( menuItem->MenuParent )
+	{
+		((TREE_MENU_ITEM*)menuItem->MenuParent)->MenuChild = 0;		
+	}
+	//удаление информации у предыдущего
+	if ( menuItem->MenuPrevItem )
+	{
+		((TREE_MENU_ITEM*)menuItem->MenuPrevItem)->MenuNextItem = 0;		
+	}
+	//проверка текущего индекса меню
+	if ( menuHead->MenuCurrentItem == menuItem )
+	{
+		menuHead->MenuCurrentItem = menuHead->MenuHeadItem;
+	}
+	free(menuItem);
+	menuItem = 0;
+	return 1;
+}
+
+uint8_t MenuDeleteItem(TREE_MENU *menuHead, uint16_t MenuItemId)
+{
+	TREE_MENU_ITEM *TargetMenuItem = 0;
+	//проверка входных данных
+	if ( !menuCheckMainConfig(menuHead) ) return 0;
+	//проверка разрешения на изменение
+	if ( !menuHead->MenuEditAllow ) return 0;
+	TargetMenuItem = getMenuItemById(menuHead->MenuHeadItem, MenuItemId);
+	//проверка наличия пункта меню
+	if ( !TargetMenuItem ) return 0;
+	
+	//блокировка
+	menuHead->MenuEditAllow = 0;
+	
+	if ( !MenuDeleteItemService(menuHead, TargetMenuItem) )
+	{
+		//снимаем блокировку
+	  menuHead->MenuEditAllow = 1;
+		//возвращаем 0
+		return 0;
+	}
+	
+	//снимаем блокировку
+	menuHead->MenuEditAllow = 1;
+	
+	return 1;
+}
+
+TREE_MENU_ITEM *MenuGetItemById(TREE_MENU *menuHead, uint16_t MenuItemId)
+{
+	//проверка входных данных
+	if ( !menuCheckMainConfig(menuHead) ) return 0;
+	return getMenuItemById(menuHead->MenuHeadItem, MenuItemId);
 }
 
 uint8_t MenuUpdate(TREE_MENU *menuHead, uint16_t ClockSecond, uint16_t ClockMillisecond)

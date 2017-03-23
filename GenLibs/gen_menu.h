@@ -38,6 +38,16 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
 uint8_t Menu2_SubMenu4_ChangeSignalCenterDraw(const uint8_t frameNum);
 uint8_t Menu2_SubMenu4_ChangeSignalCenterEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
 
+//Menu2 - SubMenu1 - alt - Change Prescaler
+uint8_t Menu2_SubMenu1_Alt_ChangePrescalerDraw(const uint8_t frameNum);
+uint8_t Menu2_SubMenu1_Alt_ChangePrescalerEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
+//Menu2 - SubMenu2 - alt - Change ARR
+uint8_t Menu2_SubMenu2_Alt_ChangeARRDraw(const uint8_t frameNum);
+uint8_t Menu2_SubMenu2_Alt_ChangeARREvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
+//Menu2 - SubMenu3 - alt - Change Signal Steps / CCR
+uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCRDraw(const uint8_t frameNum);
+uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCREvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
+
 //Menu3 - SubMenu1 - Change Dead Time
 uint8_t Menu3_SubMenu1_ChangeDeadTimeDraw(const uint8_t frameNum);
 uint8_t Menu3_SubMenu1_ChangeDeadTimeEvents(const uint16_t frameNum, SYS_EVENTS_DATA genEvents);
@@ -59,5 +69,7 @@ uint8_t Menu3_SubMenu6_ChangeLanguageEvents(const uint16_t frameNum, SYS_EVENTS_
 
 //Menu4 - SubMenu1 - Save Dialog
 uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum);
+
+void GenChangeMenu(void);
 
 #endif

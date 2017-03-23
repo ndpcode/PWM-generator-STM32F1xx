@@ -22,30 +22,30 @@ HD44780_DISPLAY_STRUCT Display;
 TREE_MENU *GenMenu;
 
 uint16_t MenuOKItemID;
+uint16_t Menu2ItemID;
 
 //структура основных параметров, размер 24(32) байт, кратный 2 для упрощения сохранения на flash
 struct MainConfig
 {
 	unsigned isImmediateUpdate : 1;
-	unsigned isShowRealFreq : 1;
+	unsigned ShowFreqType : 3;
 	unsigned languageId : 4;
-	int32_t freqPWM;
-	int32_t freqSignal;
+	uint8_t signalType;
+	double freqPWM;
+	double freqSignal;
 	int32_t powerK;
 	int32_t centerK;
 	int32_t pwmMinPulseLengthInNS;
 	int32_t pwmDeadTimeInNS;
-	uint8_t signalType;
+	uint16_t timerPrescaler;
+	uint16_t timerARR;
+	uint16_t timerStepsCCR;
 } GenConfig;
-
-
 
 uint8_t InitDefaults(void);
 uint8_t DisplayInit(void);
 SYS_EVENTS_DATA GenGetEventsFunc(void);
 uint8_t MenuInit(void);
-
-
 
 int main(void)
 {
@@ -92,10 +92,22 @@ int main(void)
 	
 	//создание меню
 	if ( MenuInit() != RESULT_OK ) ErrorHandler(RESULT_FATAL_ERROR);
+	//изменение меню в зависимости от настроек
+	GenChangeMenu();
 	
 	//запуск ШИМ
-	UpdateSignal(GenConfig.freqPWM, GenConfig.freqSignal, (double)GenConfig.powerK / 100, (double)GenConfig.centerK / 100,
-               GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
+	if ( GenConfig.ShowFreqType != ShowFreqTypeDirectControl )
+	{
+		GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
+		GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
+	  GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
+                                                          GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+		                                                      GenConfig.signalType);		
+	}
+	GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 100,
+		              (double)GenConfig.centerK / 100, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+									GenConfig.signalType);
+
 	
 	//светодиоды для индикации
 	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
@@ -112,15 +124,17 @@ int main(void)
 
 uint8_t InitDefaults(void)
 {
+	MenuOKItemID = 0;
+  Menu2ItemID = 0;
 	//read from flash
 	memset(&GenConfig, 0, sizeof(GenConfig));
 	FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
 	//проверка наличия сохраненных данных
-	if ( GenConfig.freqPWM == 0xFFFFFFFF )
+	if ( GenConfig.freqPWM == 0xFFFFFFFFFFFFFFFF )
 	{
 		//данные по-умолчанию
 		GenConfig.isImmediateUpdate = defaultUpdateType;
-		GenConfig.isShowRealFreq = defaultShowRealFreqType;
+		GenConfig.ShowFreqType = defaultShowFreqType;
 		GenConfig.languageId = defaultLocLanguage;
 		GenConfig.freqPWM= defaultFreqPWM;
 		GenConfig.freqSignal = defaultFreqSignal;
@@ -129,6 +143,9 @@ uint8_t InitDefaults(void)
 		GenConfig.pwmMinPulseLengthInNS = defaultTransistorsMinTime;
 		GenConfig.pwmDeadTimeInNS = defaultTransistorsDeadTime;
 		GenConfig.signalType = defaultSignalType;
+		GenConfig.timerPrescaler = defaultTimerPrescaler;
+		GenConfig.timerARR = defaultTimerARR;
+		GenConfig.timerStepsCCR = defaultTimerStepsCCR;
 	};	
 	return RESULT_OK;
 }
@@ -188,6 +205,7 @@ uint8_t MenuInit(void)
 	MenuAddNextItem(GenMenu, 0, Menu1_StartMenuDraw, Menu1_StartMenuEvents);
 	//основное меню 2
 	varIndex = MenuAddNextItem(GenMenu, 0, Menu2_MainMenuDraw, Menu2_MainMenuEvents);
+	Menu2ItemID = varIndex;
 	    //подменю 1 к меню 2
       MenuAddSubItem(GenMenu, varIndex, Menu2_SubMenu1_ChangePWMFreqDraw, Menu2_SubMenu1_ChangePWMFreqEvents);
 	    //подменю 2 к меню 2
