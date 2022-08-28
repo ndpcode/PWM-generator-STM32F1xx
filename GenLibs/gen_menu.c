@@ -145,7 +145,7 @@ void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
 		memset(&GenConfig, 0, sizeof(GenConfig));
 		FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
 	  //проверка наличия сохраненных данных
-	  if ( GenConfig.freqPWM == 0xFFFFFFFFFFFFFFFF )
+	  if ( GenConfig.signalType == 0xFF )
 	  {
 		  //данные по-умолчанию
 		  GenConfig.isImmediateUpdate = defaultUpdateType;
@@ -171,10 +171,10 @@ void Buttons_1_2_scan(SYS_EVENTS_DATA genEvents)
 		  GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
 	    GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
 	    GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
-                                                            GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+                                                            (double)GenConfig.powerK / 10000, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
 		                                                        GenConfig.signalType);
 	  }
-		GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 100,
+		GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 10000,
 		                (double)GenConfig.centerK / 100, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		LastMenuItemID = GenMenu->MenuCurrentItem->MenuItemId;
 		GenMenu->MenuTransitionTimeInMS = 0;
@@ -278,8 +278,8 @@ void MenuTimerUpdate(void)
 		GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
 	  GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
 	  GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
-                                                          GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
-		                                                      GenConfig.signalType);;
+                                                          (double)GenConfig.powerK / 10000, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+		                                                      GenConfig.signalType);
 	}
 	if ( GenConfig.ShowFreqType == ShowFreqTypeActualFreq )
 	{
@@ -288,7 +288,7 @@ void MenuTimerUpdate(void)
 	}
 	if ( GenConfig.isImmediateUpdate )
 	{
-	  GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 100,
+	  GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 10000,
 		                (double)GenConfig.centerK / 100, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 	}	
 }
@@ -302,7 +302,7 @@ void MenuResetSignalVal(void)
 	GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
 	GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
 	GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
-                                                        GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+                                                        (double)GenConfig.powerK / 10000, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
 		                                                    GenConfig.signalType);
 }
 
@@ -472,7 +472,7 @@ uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 	  //1 строка
 		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[5], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-		MenuFloatingStrDraw(&Line2BufferNew[0], locLanguageData[6], 1, 16, &menu_iteration_int2);
+		MenuTickerStrDraw(&Line2BufferNew[0], locLanguageData[6], 1, 16, &menu_iteration_uint2);
 		return RESULT_OK;
 	};
 	
@@ -485,7 +485,7 @@ uint8_t Menu2_MainMenuDraw(const uint8_t frameNum)
 		//1 строка
 		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[5], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-		MenuFloatingStrDraw(&Line2Buffer[0], locLanguageData[6], 1, 16, &menu_iteration_int2);
+		MenuTickerStrDraw(&Line2Buffer[0], locLanguageData[6], 1, 16, &menu_iteration_uint2);
 	};
 	
 	//выводим на дисплей
@@ -542,7 +542,7 @@ uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
 	  //1 строка
 		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[7], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-		MenuFloatingStrDraw(&Line2BufferNew[0], locLanguageData[8], 1, 16, &menu_iteration_int2);
+		MenuTickerStrDraw(&Line2BufferNew[0], locLanguageData[8], 1, 16, &menu_iteration_uint2);
 		return RESULT_OK;
 	};
 	
@@ -555,7 +555,7 @@ uint8_t Menu3_ExtraMenuDraw(const uint8_t frameNum)
 		//1 строка
 		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[7], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-		MenuFloatingStrDraw(&Line2Buffer[0], locLanguageData[8], 1, 16, &menu_iteration_int2);
+		MenuTickerStrDraw(&Line2Buffer[0], locLanguageData[8], 1, 16, &menu_iteration_uint2);
 	};
 	
 	//выводим на дисплей
@@ -612,7 +612,7 @@ uint8_t Menu4_SaveMenuDraw(const uint8_t frameNum)
 	  //1 строка
 		MenuFloatingStrDraw(&Line1BufferNew[0], locLanguageData[9], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-		MenuFloatingStrDraw(&Line2BufferNew[0], locLanguageData[10], 1, 16, &menu_iteration_int2);
+		MenuTickerStrDraw(&Line2BufferNew[0], locLanguageData[10], 1, 16, &menu_iteration_uint1);
 		return RESULT_OK;
 	};
 	
@@ -625,7 +625,7 @@ uint8_t Menu4_SaveMenuDraw(const uint8_t frameNum)
 		//1 строка
 		MenuFloatingStrDraw(&Line1Buffer[0], locLanguageData[9], 1, 16, &menu_iteration_int1);	
 	  //2 строка
-		MenuFloatingStrDraw(&Line2Buffer[0], locLanguageData[10], 1, 16, &menu_iteration_int2);
+		MenuTickerStrDraw(&Line2Buffer[0], locLanguageData[10], 1, 16, &menu_iteration_uint1);
 	};	
 	
 	//выводим на дисплей
@@ -874,7 +874,13 @@ uint8_t Menu2_SubMenu1_ChangePWMFreqEvents(const uint16_t frameNum, SYS_EVENTS_D
 		AnimVarNumberEnable(valIncSize, 1);
 	};
 	
-	Buttons_1_2_scan(genEvents);
+	//кнопки 1 - данные по-умолчанию, 2 - ОК
+	Buttons_1_2_scan(genEvents);	
+	if ( genEvents & EVENT_BUTTON1_CLICK )
+	{
+		menu_int32 = (int32_t)GenConfig.freqPWM;
+		incSize = DeltaValMinValue;
+	}
 	
 	return RESULT_OK;
 }
@@ -1093,7 +1099,13 @@ uint8_t Menu2_SubMenu2_ChangeSignalFreqEvents(const uint16_t frameNum, SYS_EVENT
 		AnimVarNumberEnable(valIncSize, 1);
 	};
 	
-	Buttons_1_2_scan(genEvents);
+	//кнопки 1 - данные по-умолчанию, 2 - ОК
+	Buttons_1_2_scan(genEvents);	
+	if ( genEvents & EVENT_BUTTON1_CLICK )
+	{
+		menu_int32 = (int32_t)GenConfig.freqSignal;
+		incSize = DeltaValMinValue;
+	}
 	
 	return RESULT_OK;
 }
@@ -1182,8 +1194,8 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
 	if ( genEvents & EVENT_VALCODER_CCW )
 	{
 		AnimVarNumberDec(valMain);
-		if ( GenConfig.powerK < MIN_POWER_K )
-			GenConfig.powerK = MIN_POWER_K;
+		if ( (double)GenConfig.powerK / 10000 < MIN_POWER_K )
+			GenConfig.powerK = MIN_POWER_K * 10000;
     MenuTimerUpdate();
 	};
 	
@@ -1191,8 +1203,8 @@ uint8_t Menu2_SubMenu3_ChangeSignalPowerEvents(const uint16_t frameNum, SYS_EVEN
 	if ( genEvents & EVENT_VALCODER_CW )
 	{
 		AnimVarNumberInc(valMain);
-		if ( GenConfig.powerK > MAX_POWER_K )
-			GenConfig.powerK = MAX_POWER_K;
+		if ( (double)GenConfig.powerK / 10000 > MAX_POWER_K )
+			GenConfig.powerK = MAX_POWER_K * 10000;
     MenuTimerUpdate();
 	};
 	
@@ -1382,7 +1394,7 @@ uint8_t Menu2_SubMenu1_Alt_ChangePrescalerEvents(const uint16_t frameNum, SYS_EV
 		bufferVal = menu_int32;
 		AnimVarNumberDec(valMain);
 		bufferVarK = GenCheckSignalConfig(menu_int32 - 1, GenConfig.timerARR, GenConfig.timerStepsCCR,
-		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  (double)GenConfig.powerK / 10000, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
 		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		if ( !bufferVarK )
 		{
@@ -1398,7 +1410,7 @@ uint8_t Menu2_SubMenu1_Alt_ChangePrescalerEvents(const uint16_t frameNum, SYS_EV
 		bufferVal = menu_int32;
 		AnimVarNumberInc(valMain);
 		bufferVarK = GenCheckSignalConfig(menu_int32 - 1, GenConfig.timerARR, GenConfig.timerStepsCCR,
-		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  (double)GenConfig.powerK / 10000, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
 		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		if ( !bufferVarK )
 		{
@@ -1408,7 +1420,12 @@ uint8_t Menu2_SubMenu1_Alt_ChangePrescalerEvents(const uint16_t frameNum, SYS_EV
     MenuTimerUpdate();
 	};
 	
-	Buttons_1_2_scan(genEvents);
+	//кнопки 1 - данные по-умолчанию, 2 - ОК
+	Buttons_1_2_scan(genEvents);	
+	if ( genEvents & EVENT_BUTTON1_CLICK )
+	{
+    menu_int32 = GenConfig.timerPrescaler + 1;
+	}
 	
 	return RESULT_OK;
 }
@@ -1480,7 +1497,7 @@ uint8_t Menu2_SubMenu2_Alt_ChangeARREvents(const uint16_t frameNum, SYS_EVENTS_D
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		MenuGoToParentItem(GenMenu);
+		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
@@ -1497,7 +1514,7 @@ uint8_t Menu2_SubMenu2_Alt_ChangeARREvents(const uint16_t frameNum, SYS_EVENTS_D
 		bufferVal = menu_int32;
 		AnimVarNumberDec(valMain);
 		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, menu_int32, GenConfig.timerStepsCCR,
-		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  (double)GenConfig.powerK / 10000, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
 		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		if ( !bufferVarK )
 		{
@@ -1513,7 +1530,7 @@ uint8_t Menu2_SubMenu2_Alt_ChangeARREvents(const uint16_t frameNum, SYS_EVENTS_D
 		bufferVal = menu_int32;
 		AnimVarNumberInc(valMain);
 		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, menu_int32, GenConfig.timerStepsCCR,
-		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  (double)GenConfig.powerK / 10000, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
 		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		if ( !bufferVarK )
 		{
@@ -1523,7 +1540,12 @@ uint8_t Menu2_SubMenu2_Alt_ChangeARREvents(const uint16_t frameNum, SYS_EVENTS_D
     MenuTimerUpdate();
 	};
 	
-	Buttons_1_2_scan(genEvents);
+	//кнопки 1 - данные по-умолчанию, 2 - ОК
+	Buttons_1_2_scan(genEvents);	
+	if ( genEvents & EVENT_BUTTON1_CLICK )
+	{
+    menu_int32 = GenConfig.timerARR;
+	}
 	
 	return RESULT_OK;
 }
@@ -1595,7 +1617,7 @@ uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCREvents(const uint16_t frameNum, SYS_EVE
 	{
 		FreeDataWhenTransition();
 		menuTransDirection = 1; //вправо(-)
-		MenuGoToParentItem(GenMenu);
+		MenuGoToPrevItem(GenMenu);
 	};
 	
 	//событие при нажатии кнопки 6
@@ -1618,7 +1640,7 @@ uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCREvents(const uint16_t frameNum, SYS_EVE
 		bufferVal = menu_int32;
 		AnimVarNumberDec(valMain);
 		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, GenConfig.timerARR, menu_int32,
-		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  (double)GenConfig.powerK / 10000, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
 		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		if ( !bufferVarK )
 		{
@@ -1634,7 +1656,7 @@ uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCREvents(const uint16_t frameNum, SYS_EVE
 		bufferVal = menu_int32;
 		AnimVarNumberInc(valMain);
 		bufferVarK = GenCheckSignalConfig(GenConfig.timerPrescaler, GenConfig.timerARR, menu_int32,
-		                                  GenConfig.powerK, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
+		                                  (double)GenConfig.powerK / 10000, GenConfig.centerK, GenConfig.pwmMinPulseLengthInNS,
 		                                  GenConfig.pwmDeadTimeInNS, GenConfig.signalType);
 		if ( !bufferVarK )
 		{
@@ -1644,7 +1666,12 @@ uint8_t Menu2_SubMenu3_Alt_ChangeStepsCCREvents(const uint16_t frameNum, SYS_EVE
     MenuTimerUpdate();
 	};
 	
-	Buttons_1_2_scan(genEvents);
+	//кнопки 1 - данные по-умолчанию, 2 - ОК
+	Buttons_1_2_scan(genEvents);	
+	if ( genEvents & EVENT_BUTTON1_CLICK )
+	{
+    menu_int32 = GenConfig.timerStepsCCR;
+	}
 	
 	return RESULT_OK;
 }
@@ -1891,7 +1918,7 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 		  bufferVal = strlen(locLanguageData[24]);
 		  bufferVarK = GetCenterPos(locLanguageData[24]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
 		case signalTriangle:
@@ -1899,7 +1926,7 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 		  bufferVal = strlen(locLanguageData[25]);
 		  bufferVarK = GetCenterPos(locLanguageData[25]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
 		case signalSquare:
@@ -1907,7 +1934,7 @@ uint8_t Menu3_SubMenu3_ChangeSignalTypeDraw(const uint8_t frameNum)
 		  bufferVal = strlen(locLanguageData[26]);
 		  bufferVarK = GetCenterPos(locLanguageData[26]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 	};
 	
@@ -2014,14 +2041,14 @@ uint8_t Menu3_SubMenu4_ChangeUpdateTypeDraw(const uint8_t frameNum)
 		bufferVal = strlen(locLanguageData[28]);
 		bufferVarK = GetCenterPos(locLanguageData[28]);
 		MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                          bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                          bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 	} else
 	{
 		_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[29],  GetCenterPos(locLanguageData[29]));
 		bufferVal = strlen(locLanguageData[29]);
 		bufferVarK = GetCenterPos(locLanguageData[29]);
 		MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                          bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                          bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 	};
 	
 	//выводим на дисплей
@@ -2112,7 +2139,7 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeDraw(const uint8_t frameNum)
 		  bufferVal = strlen(locLanguageData[31]);
 		  bufferVarK = GetCenterPos(locLanguageData[31]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
 		case ShowFreqTypeActualFreq:
@@ -2120,7 +2147,7 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeDraw(const uint8_t frameNum)
 		  bufferVal = strlen(locLanguageData[32]);
 		  bufferVarK = GetCenterPos(locLanguageData[32]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 		
 		case ShowFreqTypeDirectControl:
@@ -2128,7 +2155,7 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeDraw(const uint8_t frameNum)
 		  bufferVal = strlen(locLanguageData[33]);
 		  bufferVarK = GetCenterPos(locLanguageData[33]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 	};
 	
@@ -2166,6 +2193,7 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeEvents(const uint16_t frameNum, SYS_EVE
 			GenChangeMenu();
 			MenuTimerUpdate();
 		}
+		LedUpdate();
 	};
 	
 	//событие при вращении валкодера по ч стрелке
@@ -2178,6 +2206,7 @@ uint8_t Menu3_SubMenu5_ChangeShowFreqTypeEvents(const uint16_t frameNum, SYS_EVE
 			GenChangeMenu();
 			MenuTimerUpdate();
 		}
+		LedUpdate();
 	};
 	
 	Buttons_1_2_scan(genEvents);
@@ -2221,19 +2250,19 @@ uint8_t Menu3_SubMenu6_ChangeLanguageDraw(const uint8_t frameNum)
   switch ( GenConfig.languageId )
 	{
 		case en_US:
-			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[35],  GetCenterPos(locLanguageData[28]));
+			_copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[35],  GetCenterPos(locLanguageData[35]));
 		  bufferVal = strlen(locLanguageData[35]);
 		  bufferVarK = GetCenterPos(locLanguageData[35]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 			
 		case ru_RU:
-		  _copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[36],  GetCenterPos(locLanguageData[28]));
+		  _copyStringToBufferLtoR(&Line2Buffer[0], locLanguageData[36],  GetCenterPos(locLanguageData[36]));
 		  bufferVal = strlen(locLanguageData[36]);
 		  bufferVarK = GetCenterPos(locLanguageData[36]);
 		  MenuAnimSelectionDraw(&Line2Buffer[0], bufferVarK - 1, bufferVarK - 1,
-                            bufferVarK + bufferVal - 1, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
+                            bufferVarK + bufferVal, 16, GenMenu->MenuTargetDrawFPS, frameNum); 
 		break;
 	};
 	

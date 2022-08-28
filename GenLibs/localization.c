@@ -39,7 +39,7 @@ uint8_t GenChangeLocalization(uint8_t locId)
 	
 	switch ( locId )
 	{
-		case 0:
+		case en_US:
 			locAddStr(&i, L0_MENU_HI_STR1);
 		  locAddStr(&i, L0_MENU_HI_STR2);
 		  locAddStr(&i, L0_MENU_OK_STR);
@@ -83,7 +83,7 @@ uint8_t GenChangeLocalization(uint8_t locId)
 			locAddStr(&i, L0_MENU_MENU4_SUB1_STR4);
 		break;
 		
-		case 1:
+		case ru_RU:
 			locAddStr(&i, L1_MENU_HI_STR1);
 		  locAddStr(&i, L1_MENU_HI_STR2);
 		  locAddStr(&i, L1_MENU_OK_STR);

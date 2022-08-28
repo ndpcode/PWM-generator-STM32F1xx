@@ -211,8 +211,6 @@ uint8_t GenInitSignalOnTimer1(uint8_t _signal_type)
 		//инициализация как эмулятор сигналов
 		return GenInitTimer1ForSignalEmul();
 	};
-	
-	return 0;
 }
 
 void GenTimer1SetPrescaler(void) 
@@ -390,13 +388,13 @@ uint8_t GenUpdateSignal(const uint16_t _tim_prescaler, const uint16_t _tim_arr, 
 	{
 		accuracySignalB = _tim_arr;
 		pwmSignalStepsB = _tim_steps_ccr;
-		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k/100, _center_k,
+		calculateDataArray(pwmSignalArrayB, pwmSignalStepsB, accuracySignalB, _power_k, _center_k,
 		                   _transistorsMinTimeNS, _transistorsDeadTimeNS, _signal_type);
 	} else
 	{ //теущий буфер - B
 		accuracySignalA = _tim_arr;
 		pwmSignalStepsA = _tim_steps_ccr;
-		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k/100, _center_k,
+		calculateDataArray(pwmSignalArrayA, pwmSignalStepsA, accuracySignalA, _power_k, _center_k,
 		                   _transistorsMinTimeNS, _transistorsDeadTimeNS, _signal_type);
 	};				
 	//подготовка флагов к плавному переключению сигнала
@@ -589,7 +587,7 @@ uint16_t GenGetStepsCCRValueFromFreq(const uint16_t _tim_prescaler, const double
 
 double GenGetPWMFreqValueFromTimer(const uint16_t _tim_prescaler, const uint16_t _tim_arr, const uint8_t _signal_type)
 {
-  if ( !GenCheckSignalConfig(_tim_prescaler, _tim_arr, 0, MIN_POWER_K,
+  if ( !GenCheckSignalConfig(_tim_prescaler, _tim_arr, 10, MIN_POWER_K,
 		                         MIN_CENTER_K, MIN_PULSE_TIME, MIN_DEAD_TIME, _signal_type) ) return 0;
 	
 	if ( _signal_type == signalSquare )

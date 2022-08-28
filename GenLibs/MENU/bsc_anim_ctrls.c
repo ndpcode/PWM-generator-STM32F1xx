@@ -317,8 +317,9 @@ uint8_t MenuAnimSelectionDraw(char *_buffer, uint8_t _selLength, uint8_t leftBor
 //отрисовка плавающей (вправо - влево) строки, если целиком не помещается в поле длиной lineLength
 uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, uint8_t lineLength, int16_t *iteration)
 {
-	uint8_t i = 0;
-	uint8_t floatLength = 0;
+	uint8_t i = 0,
+	        floatLength = 0,
+	        _shift = 0;
 	if ( !_buffer ) return 0;
 	if ( !floatText ) return 0;
 	if ( !startPos ) return 0;
@@ -340,9 +341,10 @@ uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, ui
     if ( ( abs(*iteration) + lineLength ) > floatLength ) *iteration = -(*iteration - 2);
   } else
 	{
-		for ( i = ( lineLength - floatLength ) / 2; i < floatLength; i++ )
+		_shift = ( lineLength - ( startPos - 1 ) - floatLength ) / 2 + ( startPos - 1 );
+		for ( i = 0; i < floatLength; i++ )
 		{
-			_buffer[startPos - 1 + i] = floatText[i];		
+			_buffer[_shift + i] = floatText[i];		
 		}
 	};
 
@@ -352,8 +354,9 @@ uint8_t MenuFloatingStrDraw(char *_buffer, char *floatText, uint8_t startPos, ui
 //отрисовка бегущей (справа налево) строки, если целиком не помещается в поле длиной lineLength
 uint8_t MenuTickerStrDraw(char *_buffer, char *tickerText, uint8_t startPos, uint8_t lineLength, uint16_t *iteration)
 {
-	uint8_t i = 0;
-	uint8_t tickerLength = 0;
+	uint8_t i = 0,
+	        tickerLength = 0,
+	        _shift = 0;
 	if ( !_buffer ) return 0;
 	if ( !tickerText ) return 0;
 	if ( !startPos ) return 0;
@@ -372,9 +375,10 @@ uint8_t MenuTickerStrDraw(char *_buffer, char *tickerText, uint8_t startPos, uin
 	  (*iteration)++;
   } else
 	{
-		for ( i = ( lineLength - tickerLength ) / 2; i < tickerLength; i++ )
+		_shift = ( lineLength - ( startPos - 1 ) - tickerLength ) / 2 + ( startPos - 1 );
+		for ( i = 0; i < tickerLength; i++ )
 		{
-			_buffer[startPos - 1 + i] = tickerText[i];		
+			_buffer[_shift + i] = tickerText[i];		
 		}
 	};
 

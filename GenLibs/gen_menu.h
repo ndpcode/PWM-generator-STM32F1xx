@@ -71,5 +71,6 @@ uint8_t Menu3_SubMenu6_ChangeLanguageEvents(const uint16_t frameNum, SYS_EVENTS_
 uint8_t Menu4_SubMenu1_SaveDialogDraw(const uint8_t frameNum);
 
 void GenChangeMenu(void);
+void LedUpdate(void);
 
 #endif

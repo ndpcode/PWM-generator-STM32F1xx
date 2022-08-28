@@ -1,3 +1,9 @@
+//****************************************************************************//
+//The PWM generator STM32F103 Firmware project
+//main source file
+//Created 15.01.2017
+//Created by Novikov Dmitry
+//****************************************************************************//
 
 #include "settings.h"
 #include "bsc_stm32_delay.h"
@@ -101,25 +107,27 @@ int main(void)
 		GenConfig.timerPrescaler = GenGetPrescalerValue(GenConfig.freqPWM, GenConfig.signalType);
 		GenConfig.timerARR = GenGetARRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.signalType);
 	  GenConfig.timerStepsCCR = GenGetStepsCCRValueFromFreq(GenConfig.timerPrescaler, GenConfig.freqPWM, GenConfig.freqSignal, GenConfig.timerARR,
-                                                          GenConfig.powerK, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
+                                                          (double)GenConfig.powerK / 10000, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
 		                                                      GenConfig.signalType);		
 	}
-	GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 100,
+	if ( GenConfig.ShowFreqType == ShowFreqTypeDirectControl )
+	{
+	  GenConfig.freqPWM = GenGetPWMFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.signalType);
+		GenConfig.freqSignal = GenGetSignalFreqValueFromTimer(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, GenConfig.signalType);
+	}
+	GenUpdateSignal(GenConfig.timerPrescaler, GenConfig.timerARR, GenConfig.timerStepsCCR, (double)GenConfig.powerK / 10000,
 		              (double)GenConfig.centerK / 100, GenConfig.pwmMinPulseLengthInNS, GenConfig.pwmDeadTimeInNS,
 									GenConfig.signalType);
 
 	
 	//светодиоды для индикации
-	if ( GenConfig.isImmediateUpdate ) LED_BLUE_ON; else LED_BLUE_OFF;
-	if ( GenConfig.signalType == 3 ) LED_GREEN_ON; else LED_GREEN_OFF;
+  LedUpdate();
 	
 	while(1)
 	{
 		//обновление меню и элементов управления
 		MenuUpdate(GenMenu, getTimeS, getTimeMS);
 	};
-	
-	ControlsDataClear();
 }
 
 uint8_t InitDefaults(void)
@@ -130,7 +138,7 @@ uint8_t InitDefaults(void)
 	memset(&GenConfig, 0, sizeof(GenConfig));
 	FlashReadData((uint8_t*)&GenConfig, sizeof(GenConfig));
 	//проверка наличия сохраненных данных
-	if ( GenConfig.freqPWM == 0xFFFFFFFFFFFFFFFF )
+	if ( GenConfig.signalType == 0xFF )
 	{
 		//данные по-умолчанию
 		GenConfig.isImmediateUpdate = defaultUpdateType;

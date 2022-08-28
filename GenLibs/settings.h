@@ -15,12 +15,12 @@
 #define maxSignSteps 3000 //максимальная длина массива под значения сигнала, maxSinSteps*4 байт < 1/2 от размера RAM
 
 #define defaultUpdateType 0            //по-умолчанию автообновление выкл
-#define defaultShowFreqType 0          //по-умолчанию показывается плавная регулировка частот
-#define defaultLocLanguage 2           //по-умолчанию язык
+#define defaultShowFreqType 1          //по-умолчанию показывается плавная регулировка частот
+#define defaultLocLanguage 1           //по-умолчанию язык
 #define defaultSignalType 1            //по-умолчанию тип сигнала, синус = 1, треугольник = 2, меандр = 3
 #define defaultFreqPWM 25000           //по-умолчанию частота ШИМ
 #define defaultFreqSignal 100          //по-умолчанию частота сигнала
-#define defaultPowerK 10000            //по-умолчанию к-т мощности, div 100
+#define defaultPowerK 10000            //по-умолчанию к-т мощности, div 10000
 #define defaultSignalCenter 0          //по-умолчанию к-т смещения центра сигнала, div 100
 #define defaultTransistorsMinTime  50  //по-умолчанию минимальное время открытого транзистора, нс
 #define defaultTransistorsDeadTime 50  //по-умолчанию deadTime для транзисторов, нс
@@ -36,8 +36,8 @@
 #define signalIndexMin signalSinus
 #define signalIndexMax signalSquare
 
-#define MIN_POWER_K 000000 //минимальное значение коэффициента мощности, %, div 100
-#define MAX_POWER_K 170000 //максимальное значение коэффициента мощности, %, div 100
+#define MIN_POWER_K 00.0 //минимальное значение коэффициента мощности
+#define MAX_POWER_K 17.0 //максимальное значение коэффициента мощности
 
 #define MIN_CENTER_K -50000 //минимальное значение к-та смещения центра, div 100
 #define MAX_CENTER_K 50000  //максимальное значение к-та смещения центра, div 100
